@@ -1,7 +1,6 @@
-import { scrapeWithCheerio } from './cheerioScraper';
 import { scrapeWithPuppeteer } from './puppeteerScraper';
 
-export type ScraperMethod = 'cheerio' | 'puppeteer';
+export type ScraperMethod = 'puppeteer';
 
 export interface ScraperResult {
   success: boolean;
@@ -15,12 +14,11 @@ export interface ScraperResult {
 }
 
 /**
- * Scrape a URL using the specified method
+ * Scrape a URL using Puppeteer
  * @param url The URL to scrape
- * @param method The scraping method to use (cheerio or puppeteer)
  * @returns The scraping result
  */
-export async function scrapeUrl(url: string, method: ScraperMethod = 'puppeteer'): Promise<ScraperResult> {
+export async function scrapeUrl(url: string): Promise<ScraperResult> {
   // Validate URL
   try {
     new URL(url);
@@ -35,22 +33,8 @@ export async function scrapeUrl(url: string, method: ScraperMethod = 'puppeteer'
     };
   }
   
-  // Choose scraping method
-  switch (method) {
-    case 'cheerio':
-      return scrapeWithCheerio(url);
-    case 'puppeteer':
-      return scrapeWithPuppeteer(url);
-    default:
-      return {
-        success: false,
-        data: null,
-        message: `Invalid scraper method: ${method}`,
-        errorDetails: {
-          message: `Method must be 'cheerio' or 'puppeteer', received: ${method}`,
-        }
-      };
-  }
+  // Use Puppeteer for scraping
+  return scrapeWithPuppeteer(url);
 }
 
-export { scrapeWithCheerio, scrapeWithPuppeteer }; 
+export { scrapeWithPuppeteer }; 
