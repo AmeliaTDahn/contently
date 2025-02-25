@@ -151,6 +151,9 @@ export default function ScraperTool() {
           <div className="p-4 border-b border-gray-200">
             <h3 className="text-lg font-semibold text-gray-800">Scraping Results</h3>
             <p className="text-sm text-gray-600">Method: Puppeteer</p>
+            <p className="text-sm text-gray-600 mt-1">
+              <span className="font-medium">Note:</span> All relative URLs have been converted to absolute URLs for proper linking.
+            </p>
           </div>
           
           <div className="p-4 space-y-6">
@@ -226,8 +229,9 @@ export default function ScraperTool() {
                           target="_blank" 
                           rel="noopener noreferrer"
                           className="text-teal-600 hover:underline"
+                          title={link.originalHref ? `Original: ${link.originalHref}` : ''}
                         >
-                          {link.text || link.href}
+                          {link.text || link.href || 'No text or href'}
                         </a>
                       </li>
                     ))}
