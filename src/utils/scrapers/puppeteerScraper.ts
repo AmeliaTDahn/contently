@@ -2,6 +2,51 @@ import puppeteer from 'puppeteer';
 import * as cheerio from 'cheerio';
 
 /**
+ * Helper function to convert relative URLs to absolute URLs
+ */
+function resolveUrl(baseUrl: string, relativeUrl: string | undefined): string | undefined {
+  if (!relativeUrl) return undefined;
+  
+  try {
+    // If it's already an absolute URL, return it as is
+    if (relativeUrl.startsWith('http://') || relativeUrl.startsWith('https://')) {
+      return relativeUrl;
+    }
+    
+    // If it's a protocol-relative URL (starts with //), add the protocol
+    if (relativeUrl.startsWith('//')) {
+      const baseUrlObj = new URL(baseUrl);
+      return `${baseUrlObj.protocol}${relativeUrl}`;
+    }
+    
+    // Handle anchor links (links that start with #)
+    if (relativeUrl.startsWith('#')) {
+      return `${baseUrl}${relativeUrl}`;
+    }
+    
+    // Create a URL object from the base URL
+    const baseUrlObj = new URL(baseUrl);
+    
+    // If the relative URL starts with /, it's relative to the root domain
+    if (relativeUrl.startsWith('/')) {
+      return `${baseUrlObj.origin}${relativeUrl}`;
+    }
+    
+    // Otherwise, it's relative to the current path
+    // Remove the filename from the path if it exists
+    let basePath = baseUrlObj.pathname;
+    if (!basePath.endsWith('/')) {
+      basePath = basePath.substring(0, basePath.lastIndexOf('/') + 1);
+    }
+    
+    return `${baseUrlObj.origin}${basePath}${relativeUrl}`;
+  } catch (error) {
+    console.error('Error resolving URL:', error);
+    return relativeUrl; // Return the original URL if there's an error
+  }
+}
+
+/**
  * Advanced scraper using Puppeteer for JavaScript-rendered content
  */
 export async function scrapeWithPuppeteer(url: string) {
@@ -105,22 +150,30 @@ export async function scrapeWithPuppeteer(url: string) {
     console.log('Extracting main content...');
     const mainContent = $('#main-content, .main-content, main, article').text().trim() || $('body').text().trim();
     
-    // Extract all links
+    // Extract all links and convert relative URLs to absolute URLs
     console.log('Extracting links...');
-    const links = $('a').map((_, el) => ({
-      text: $(el).text().trim(),
-      href: $(el).attr('href'),
-    })).get();
+    const links = $('a').map((_, el) => {
+      const href = $(el).attr('href');
+      return {
+        text: $(el).text().trim(),
+        href: resolveUrl(url, href),
+        originalHref: href, // Keep the original href for reference
+      };
+    }).get();
     console.log(`Found ${links.length} links`);
     
-    // Extract all images
+    // Extract all images and convert relative URLs to absolute URLs
     console.log('Extracting images...');
-    const images = $('img').map((_, el) => ({
-      alt: $(el).attr('alt'),
-      src: $(el).attr('src'),
-      width: $(el).attr('width'),
-      height: $(el).attr('height'),
-    })).get();
+    const images = $('img').map((_, el) => {
+      const src = $(el).attr('src');
+      return {
+        alt: $(el).attr('alt'),
+        src: resolveUrl(url, src),
+        originalSrc: src, // Keep the original src for reference
+        width: $(el).attr('width'),
+        height: $(el).attr('height'),
+      };
+    }).get();
     console.log(`Found ${images.length} images`);
     
     // Extract headings
@@ -143,20 +196,24 @@ export async function scrapeWithPuppeteer(url: string) {
     }).get();
     console.log(`Found ${tables.length} tables`);
     
-    // Extract forms
+    // Extract forms and convert relative URLs to absolute URLs
     console.log('Extracting forms...');
     const forms = $('form').map((i, form) => {
       const action = $(form).attr('action');
-      const method = $(form).attr('method');
-      const inputs = $(form).find('input').map((_, input) => {
-        return {
-          name: $(input).attr('name'),
-          type: $(input).attr('type'),
-          id: $(input).attr('id'),
-          placeholder: $(input).attr('placeholder'),
-        };
-      }).get();
-      return { formIndex: i, action, method, inputs };
+      return {
+        formIndex: i,
+        action: resolveUrl(url, action),
+        originalAction: action, // Keep the original action for reference
+        method: $(form).attr('method'),
+        inputs: $(form).find('input').map((_, input) => {
+          return {
+            name: $(input).attr('name'),
+            type: $(input).attr('type'),
+            id: $(input).attr('id'),
+            placeholder: $(input).attr('placeholder'),
+          };
+        }).get(),
+      };
     }).get();
     console.log(`Found ${forms.length} forms`);
     
@@ -164,7 +221,11 @@ export async function scrapeWithPuppeteer(url: string) {
     console.log('Compiling results...');
     const result = {
       url,
-      metadata,
+      metadata: {
+        ...metadata,
+        ogImage: resolveUrl(url, metadata.ogImage),
+        canonicalUrl: resolveUrl(url, metadata.canonicalUrl),
+      },
       structuredData,
       headings,
       links,
