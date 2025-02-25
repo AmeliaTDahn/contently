@@ -222,7 +222,7 @@ export default function ScraperTool() {
                 <h4 className="font-medium text-gray-700 mb-2">Links ({result.data.links.length} total)</h4>
                 <div className="bg-gray-50 p-3 rounded-md max-h-60 overflow-y-auto">
                   <ul className="list-disc pl-5">
-                    {result.data.links.slice(0, 10).map((link: any, i: number) => (
+                    {result.data.links.map((link: any, i: number) => (
                       <li key={i}>
                         <a 
                           href={link.href} 
@@ -235,7 +235,6 @@ export default function ScraperTool() {
                         </a>
                       </li>
                     ))}
-                    {result.data.links.length > 10 && <li>...and {result.data.links.length - 10} more</li>}
                   </ul>
                 </div>
               </div>
@@ -352,11 +351,10 @@ export default function ScraperTool() {
             {/* Main Content Preview */}
             {result.data.mainContent && (
               <div>
-                <h4 className="font-medium text-gray-700 mb-2">Content Preview</h4>
-                <div className="bg-gray-50 p-3 rounded-md max-h-60 overflow-y-auto">
-                  <p className="text-sm text-gray-600">
-                    {result.data.mainContent.substring(0, 500)}
-                    {result.data.mainContent.length > 500 && '...'}
+                <h4 className="font-medium text-gray-700 mb-2">Full Content</h4>
+                <div className="bg-gray-50 p-3 rounded-md max-h-[500px] overflow-y-auto">
+                  <p className="text-sm text-gray-600 whitespace-pre-line">
+                    {result.data.mainContent}
                   </p>
                 </div>
               </div>
