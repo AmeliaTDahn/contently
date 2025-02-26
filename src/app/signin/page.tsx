@@ -5,13 +5,22 @@ import { useAuth } from "@/lib/auth-context";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
+interface SignInResponse {
+  data?: {
+    message: string;
+  };
+  error?: {
+    message: string;
+  };
+}
+
 export default function SignIn() {
+  const router = useRouter();
+  const { signIn } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const { signIn } = useAuth();
-  const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,15 +28,17 @@ export default function SignIn() {
     setLoading(true);
 
     try {
-      const { error } = await signIn(email, password);
-      if (error) {
-        setError(error.message);
-      } else {
-        router.push("/");
+      const response = await signIn(email, password);
+      const result = response as SignInResponse;
+
+      if (result.error) {
+        setError(result.error.message);
+        return;
       }
+
+      router.push("/");
     } catch (err) {
-      setError("An unexpected error occurred");
-      console.error(err);
+      setError(err instanceof Error ? err.message : "An error occurred during sign in");
     } finally {
       setLoading(false);
     }
@@ -135,7 +146,7 @@ export default function SignIn() {
 
         <div className="text-sm text-center">
           <p className="text-gray-600">
-            Don't have an account?{" "}
+            Don&apos;t have an account?{" "}
             <Link href="/signup" className="font-medium text-teal-600 hover:text-teal-500">
               Sign up
             </Link>

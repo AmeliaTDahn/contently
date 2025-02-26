@@ -1,85 +1,106 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { env } from "@/env";
+import { useState } from 'react';
 
-export default function TestCors() {
-  const [status, setStatus] = useState<string>("Testing CORS...");
+interface ApiResponse {
+  status: number;
+  statusText: string;
+  data?: {
+    message?: string;
+    [key: string]: unknown;
+  };
+  error?: {
+    message: string;
+  };
+}
+
+export default function CorsTest() {
+  const [response, setResponse] = useState<ApiResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<any>(null);
 
-  useEffect(() => {
-    async function checkCors() {
-      try {
-        // Make a direct fetch request to the Supabase API
-        const response = await fetch(`${env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/`, {
-          method: 'GET',
-          headers: {
-            'apikey': env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-            'Content-Type': 'application/json'
-          }
-        });
-        
-        const data = await response.json().catch(() => null);
-        
-        if (!response.ok) {
-          setError(`CORS Error: ${response.status} ${response.statusText}`);
-          setStatus("Failed");
-          setResult({ 
-            status: response.status, 
-            statusText: response.statusText,
-            data 
-          });
-        } else {
-          setStatus("Success! No CORS issues detected.");
-          setResult({ 
-            status: response.status, 
-            statusText: response.statusText,
-            data 
-          });
-        }
-      } catch (err) {
-        setError(`Unexpected error: ${err instanceof Error ? err.message : String(err)}`);
-        setStatus("Failed - Possible CORS issue");
-      }
+  const testCors = async () => {
+    try {
+      const res = await fetch('/api/test-cors', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const data = await res.json() as Record<string, unknown>;
+      setResponse({
+        status: res.status,
+        statusText: res.statusText,
+        data,
+      });
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred while testing CORS');
+      setResponse(null);
     }
+  };
 
-    checkCors();
-  }, []);
+  const testCorsError = async () => {
+    try {
+      const res = await fetch('/api/test-cors-error', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const data = await res.json() as Record<string, unknown>;
+      setResponse({
+        status: res.status,
+        statusText: res.statusText,
+        data,
+      });
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred while testing CORS error');
+      setResponse(null);
+    }
+  };
 
   return (
-    <div className="p-8">
-      <h1 className="text-2xl font-bold mb-4">Supabase CORS Test</h1>
-      <div className="mb-4">
-        <p><strong>Status:</strong> {status}</p>
-        {error && (
-          <div className="mt-4 p-4 bg-red-50 text-red-700 rounded">
-            {error}
-          </div>
-        )}
-      </div>
+    <div className="max-w-4xl mx-auto p-6">
+      <h1 className="text-2xl font-bold mb-6">Test CORS Configuration</h1>
       
-      {result && (
-        <div className="mt-8 p-4 bg-gray-50 rounded">
-          <h2 className="text-xl font-semibold mb-2">Response Information</h2>
-          <p><strong>Status:</strong> {result.status} {result.statusText}</p>
-          <p><strong>Data:</strong></p>
-          <pre className="mt-2 p-2 bg-gray-100 rounded overflow-auto">
-            {JSON.stringify(result.data, null, 2)}
+      <div className="space-y-4">
+        <button
+          onClick={() => void testCors()}
+          className="bg-teal-600 text-white px-4 py-2 rounded hover:bg-teal-700"
+        >
+          Test CORS Success
+        </button>
+        
+        <button
+          onClick={() => void testCorsError()}
+          className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 ml-4"
+        >
+          Test CORS Error
+        </button>
+      </div>
+
+      {error && (
+        <div className="mt-4 p-4 bg-red-50 text-red-700 rounded">
+          Error: {error}
+        </div>
+      )}
+
+      {response && (
+        <div className="mt-4 p-4 bg-gray-50 rounded">
+          <h2 className="text-lg font-semibold mb-2">Response:</h2>
+          <pre className="whitespace-pre-wrap">
+            Status: {response.status} {response.statusText}
+            {response.data && (
+              <>
+                {'\n'}Data: {JSON.stringify(response.data, null, 2)}
+              </>
+            )}
           </pre>
         </div>
       )}
-      
-      <div className="mt-8">
-        <h2 className="text-xl font-semibold mb-2">CORS Troubleshooting</h2>
-        <p>If you're experiencing CORS issues, you need to:</p>
-        <ol className="list-decimal pl-5 mt-2">
-          <li>Go to your Supabase Dashboard</li>
-          <li>Navigate to Project Settings {'->'} API</li>
-          <li>Under "API Settings", find "CORS (Cross-Origin Resource Sharing)"</li>
-          <li>Add your local development URL (http://localhost:3001) to the allowed origins</li>
-        </ol>
-      </div>
     </div>
   );
 } 

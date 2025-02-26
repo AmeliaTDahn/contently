@@ -5,6 +5,15 @@ import { useAuth } from "@/lib/auth-context";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
+interface SignUpResponse {
+  data?: {
+    message: string;
+  };
+  error?: {
+    message: string;
+  };
+}
+
 export default function SignUp() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -29,18 +38,19 @@ export default function SignUp() {
     }
 
     try {
-      const { data, error } = await signUp(email, password);
-      
-      if (error) {
-        setError(error.message);
-      } else {
-        setMessage("Check your email for the confirmation link");
-        // If email confirmation is disabled in Supabase, you can redirect immediately
-        // router.push("/");
+      const response = await signUp(email, password);
+      const result = response as SignUpResponse;
+
+      if (result.error) {
+        setError(result.error.message);
+        return;
       }
+
+      setMessage("Check your email for the confirmation link");
+      // If email confirmation is disabled in Supabase, you can redirect immediately
+      // router.push("/");
     } catch (err) {
-      setError("An unexpected error occurred");
-      console.error(err);
+      setError(err instanceof Error ? err.message : 'An error occurred during sign up');
     } finally {
       setLoading(false);
     }

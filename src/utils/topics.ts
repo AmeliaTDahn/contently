@@ -1,4 +1,6 @@
+import type { KeywordResult } from './keywords';
 import { extractKeywords } from './keywords';
+import { areWordsRelated } from './wordRelations';
 
 /**
  * Extracts main topics from text content
@@ -8,25 +10,7 @@ export function extractMainTopics(text: string): string[] {
   const keywords = extractKeywords(text);
   
   // Group related keywords into topics
-  const topics = new Map<string, string[]>();
-  
-  keywords.forEach(keyword => {
-    let assigned = false;
-    
-    // Check if keyword belongs to existing topic
-    for (const [topic, words] of topics.entries()) {
-      if (areWordsRelated(keyword, words)) {
-        topics.set(topic, [...words, keyword]);
-        assigned = true;
-        break;
-      }
-    }
-    
-    // Create new topic if not assigned
-    if (!assigned) {
-      topics.set(keyword, [keyword]);
-    }
-  });
+  const topics = groupIntoTopics(keywords);
   
   // Convert topic groups to main topics
   return Array.from(topics.keys()).slice(0, 5);
@@ -40,7 +24,7 @@ export function analyzeTopicCoherence(text: string, title: string): string {
   const topics = extractMainTopics(text);
   
   // Check topic presence in each paragraph
-  const topicFlow = paragraphs.map(paragraph => {
+  const topicFlow: number[] = paragraphs.map(paragraph => {
     const paragraphTopics = topics.filter(topic =>
       paragraph.toLowerCase().includes(topic.toLowerCase())
     );
@@ -48,17 +32,12 @@ export function analyzeTopicCoherence(text: string, title: string): string {
   });
   
   // Analyze topic transitions
-  let abruptTransitions = 0;
-  for (let i = 1; i < topicFlow.length; i++) {
-    if (Math.abs(topicFlow[i] - topicFlow[i-1]) > 2) {
-      abruptTransitions++;
-    }
-  }
+  const abruptTransitions = analyzeTopicFlow(topicFlow);
   
   // Check if title topic is covered early
   const titleWords = new Set(title.toLowerCase().split(/\W+/));
   const firstParagraphTopics = topics.filter(topic =>
-    paragraphs[0].toLowerCase().includes(topic.toLowerCase())
+    paragraphs[0]?.toLowerCase().includes(topic.toLowerCase())
   );
   const titleTopicEarly = firstParagraphTopics.some(topic =>
     topic.split(/\W+/).some(word => titleWords.has(word.toLowerCase()))
@@ -76,14 +55,55 @@ export function analyzeTopicCoherence(text: string, title: string): string {
   }
 }
 
+function analyzeTopicFlow(topicFlow: number[] | undefined): number {
+  if (!topicFlow || !Array.isArray(topicFlow) || topicFlow.length < 2) {
+    return 0;
+  }
+
+  let abruptTransitions = 0;
+  const safeTopicFlow = [...topicFlow]; // Create a copy to ensure type safety
+  
+  for (let i = 1; i < safeTopicFlow.length; i++) {
+    const current = safeTopicFlow[i];
+    const previous = safeTopicFlow[i - 1];
+    
+    // Both current and previous are guaranteed to exist due to array copy
+    if (typeof current === 'number' && typeof previous === 'number') {
+      if (Math.abs(current - previous) > 2) {
+        abruptTransitions++;
+      }
+    }
+  }
+  return abruptTransitions;
+}
+
 /**
- * Checks if words are semantically related
+ * Groups keywords into topics based on their relationships.
+ * Keywords with higher scores become topic names.
  */
-function areWordsRelated(word: string, relatedWords: string[]): boolean {
-  // Simple implementation checking for common prefixes/roots
-  return relatedWords.some(related => 
-    word.length > 4 && related.length > 4 &&
-    (word.startsWith(related.substring(0, 4)) || 
-     related.startsWith(word.substring(0, 4)))
-  );
+export function groupIntoTopics(keywords: KeywordResult[]): Map<string, string[]> {
+  const topics = new Map<string, string[]>();
+
+  // Sort keywords by score in descending order
+  const sortedKeywords = [...keywords].sort((a, b) => b.score - a.score);
+
+  for (const keyword of sortedKeywords) {
+    let assigned = false;
+
+    // Check if keyword belongs to existing topic
+    for (const [topic, words] of topics.entries()) {
+      if (areWordsRelated(keyword.word, words)) {
+        topics.set(topic, [...words, keyword.word]);
+        assigned = true;
+        break;
+      }
+    }
+
+    // If keyword doesn't belong to any existing topic, create a new one
+    if (!assigned) {
+      topics.set(keyword.word, [keyword.word]);
+    }
+  }
+
+  return topics;
 } 

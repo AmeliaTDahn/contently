@@ -1,10 +1,36 @@
 "use client";
 
-import { useState } from "react";
-import { Calendar, dateFnsLocalizer, View } from "react-big-calendar";
-import { format, parse, startOfWeek, getDay } from "date-fns";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { Calendar as BigCalendar, dateFnsLocalizer, type View, SlotInfo } from "react-big-calendar";
+import withDragAndDrop from "react-big-calendar/lib/addons/dragAndDrop";
+import { format, parse, startOfWeek, getDay, addDays, addWeeks, addMonths, subDays, subWeeks, subMonths } from "date-fns";
 import { enUS } from "date-fns/locale";
 import "react-big-calendar/lib/css/react-big-calendar.css";
+import "react-big-calendar/lib/addons/dragAndDrop/styles.css";
+import { useAuth } from "@/lib/auth-context";
+
+// Add custom CSS for URL events
+const customCalendarStyles = `
+  .event-with-url {
+    border-left: 3px solid #2563eb !important;
+  }
+  
+  .event-url {
+    font-size: 0.7rem;
+    opacity: 0.8;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  
+  .event-title {
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+`;
 
 // Setup the localizer for react-big-calendar using date-fns
 const locales = {
@@ -18,6 +44,9 @@ const localizer = dateFnsLocalizer({
   getDay,
   locales,
 });
+
+// Create a drag-and-drop enabled calendar
+const DragAndDropCalendar = withDragAndDrop(BigCalendar);
 
 interface CalendarEvent {
   id: string;
@@ -50,66 +79,254 @@ const calendarStyles = {
 export default function CalendarView({ events }: CalendarViewProps) {
   const [view, setView] = useState<View>("month");
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const calendarRef = useRef<HTMLDivElement>(null);
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>(events);
 
-  const handleSelectEvent = (event: CalendarEvent) => {
-    setSelectedEvent(event);
+  // Update calendar events when the events prop changes
+  useEffect(() => {
+    setCalendarEvents(events);
+  }, [events]);
+
+  const handleSelectEvent = (event: any) => {
+    setSelectedEvent(event as CalendarEvent);
   };
 
   const handleCloseModal = () => {
     setSelectedEvent(null);
   };
 
+  // Handle event resizing and dragging
+  const handleEventDrop = useCallback((dropInfo: any) => {
+    const { event, start, end } = dropInfo;
+    const updatedEvents = calendarEvents.map(existingEvent => 
+      existingEvent.id === event.id 
+        ? { ...existingEvent, start, end } 
+        : existingEvent
+    );
+    
+    setCalendarEvents(updatedEvents);
+    
+    // Show a toast notification
+    const toast = document.createElement('div');
+    toast.className = 'event-update-toast';
+    toast.textContent = `"${event.title}" moved to ${format(start, 'PPp')}`;
+    document.body.appendChild(toast);
+    
+    // Remove the toast after 3 seconds
+    setTimeout(() => {
+      toast.classList.add('fade-out');
+      setTimeout(() => {
+        document.body.removeChild(toast);
+      }, 300);
+    }, 3000);
+  }, [calendarEvents]);
+
+  const handleEventResize = useCallback((resizeInfo: any) => {
+    const { event, start, end } = resizeInfo;
+    const updatedEvents = calendarEvents.map(existingEvent => 
+      existingEvent.id === event.id 
+        ? { ...existingEvent, start, end } 
+        : existingEvent
+    );
+    
+    setCalendarEvents(updatedEvents);
+    
+    // Show a toast notification
+    const toast = document.createElement('div');
+    toast.className = 'event-update-toast';
+    toast.textContent = `"${event.title}" resized to ${format(start, 'PPp')} - ${format(end, 'PPp')}`;
+    document.body.appendChild(toast);
+    
+    // Remove the toast after 3 seconds
+    setTimeout(() => {
+      toast.classList.add('fade-out');
+      setTimeout(() => {
+        document.body.removeChild(toast);
+      }, 300);
+    }, 3000);
+  }, [calendarEvents]);
+
+  // Handle creating a new event by selecting a time slot
+  const handleSelectSlot = useCallback((slotInfo: SlotInfo) => {
+    const title = window.prompt('Enter a title for your content:');
+    if (!title) return;
+    
+    const newEvent: CalendarEvent = {
+      id: `event-${Date.now()}`,
+      title,
+      start: slotInfo.start,
+      end: slotInfo.end,
+      description: 'New scheduled content'
+    };
+    
+    setCalendarEvents(prev => [...prev, newEvent]);
+  }, []);
+
+  // Navigation handlers
+  const navigateToday = useCallback(() => {
+    setCurrentDate(new Date());
+  }, []);
+
+  const navigatePrevious = useCallback(() => {
+    if (view === 'day') {
+      setCurrentDate(prevDate => subDays(prevDate, 1));
+    } else if (view === 'week') {
+      setCurrentDate(prevDate => subWeeks(prevDate, 1));
+    } else {
+      setCurrentDate(prevDate => subMonths(prevDate, 1));
+    }
+  }, [view]);
+
+  const navigateNext = useCallback(() => {
+    if (view === 'day') {
+      setCurrentDate(prevDate => addDays(prevDate, 1));
+    } else if (view === 'week') {
+      setCurrentDate(prevDate => addWeeks(prevDate, 1));
+    } else {
+      setCurrentDate(prevDate => addMonths(prevDate, 1));
+    }
+  }, [view]);
+
+  // Handle keyboard navigation
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    // Only handle keyboard events if the calendar is focused or no input elements are focused
+    const activeElement = document.activeElement;
+    const isInputFocused = activeElement && (
+      activeElement.tagName === 'INPUT' || 
+      activeElement.tagName === 'TEXTAREA' || 
+      (activeElement as HTMLElement).isContentEditable
+    );
+
+    if (isInputFocused) return;
+
+    switch (e.key) {
+      case 'ArrowLeft':
+        e.preventDefault();
+        navigatePrevious();
+        break;
+      case 'ArrowRight':
+        e.preventDefault();
+        navigateNext();
+        break;
+      case 'ArrowUp':
+        if (view === 'day') {
+          e.preventDefault();
+          setView('week');
+        } else if (view === 'week') {
+          e.preventDefault();
+          setView('month');
+        }
+        break;
+      case 'ArrowDown':
+        if (view === 'month') {
+          e.preventDefault();
+          setView('week');
+        } else if (view === 'week') {
+          e.preventDefault();
+          setView('day');
+        }
+        break;
+      case 'Home':
+        e.preventDefault();
+        navigateToday();
+        break;
+      default:
+        break;
+    }
+  }, [view, navigatePrevious, navigateNext, navigateToday]);
+
+  // Set up keyboard event listeners
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown);
+    
+    // Focus the calendar container to enable keyboard navigation
+    if (calendarRef.current) {
+      calendarRef.current.focus();
+    }
+    
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [handleKeyDown]);
+
   // Ensure all events have valid Date objects
-  const validEvents = events.map(event => ({
+  const validEvents = calendarEvents.map(event => ({
     ...event,
     start: event.start instanceof Date ? event.start : new Date(event.start),
     end: event.end instanceof Date ? event.end : new Date(event.end)
   }));
 
+  // Accessor functions for the calendar
+  const startAccessor = (event: any) => event.start;
+  const endAccessor = (event: any) => event.end;
+
   // Custom event styling
-  const eventStyleGetter = (event: CalendarEvent) => {
-    const style = {
-      backgroundColor: '#14b8a6', // Teal 500
-      borderRadius: '4px',
-      opacity: 0.9,
-      color: 'white',
-      border: '0',
-      display: 'block',
-      fontWeight: 500,
-      fontSize: '0.85rem',
-      padding: '2px 5px',
-      boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
-    };
+  const eventStyleGetter = (event: any) => {
+    // Determine if this is a sample event or a real one from a URL
+    const typedEvent = event as CalendarEvent;
+    const isSampleEvent = typedEvent.id.startsWith('sample-event-');
+    
     return {
-      style,
+      style: {
+        backgroundColor: isSampleEvent ? '#14b8a6' : '#3b82f6', // Teal for sample events, Blue for URL events
+        borderRadius: '4px',
+        opacity: 0.9,
+        color: 'white',
+        border: '0',
+        display: 'block',
+        fontWeight: 500,
+        fontSize: '0.85rem',
+        cursor: 'pointer',
+      },
+      className: typedEvent.url ? 'event-with-url' : '',
     };
+  };
+  
+  // Custom event component to show URL source
+  const EventComponent = ({ event }: any) => {
+    const typedEvent = event as CalendarEvent;
+    return (
+      <div title={typedEvent.url ? `Source: ${typedEvent.url}` : typedEvent.description}>
+        <div className="event-title">{typedEvent.title}</div>
+        {typedEvent.url && (
+          <div className="event-url text-xs opacity-80 truncate">
+            {new URL(typedEvent.url).hostname}
+          </div>
+        )}
+      </div>
+    );
   };
 
   // Custom day cell styling
-  const dayPropGetter = (date: Date) => {
-    return {
-      style: {
-        backgroundColor: 'white',
-        border: '1px solid #f1f5f9', // Very light gray border
-      },
-    };
-  };
+  const dayPropGetter = () => ({
+    style: {
+      backgroundColor: 'white',
+      border: '1px solid #f1f5f9', // Very light gray border
+    },
+  });
 
   // Custom slot styling (time slots in week/day view)
-  const slotPropGetter = () => {
-    return {
-      style: {
-        border: '1px solid #f1f5f9', // Very light gray border
-      },
-    };
-  };
+  const slotPropGetter = () => ({
+    style: {
+      border: '1px solid #f1f5f9', // Very light gray border
+    },
+  });
 
   return (
-    <div className="h-[700px]">
+    <div 
+      className="h-full" 
+      ref={calendarRef} 
+      tabIndex={0} // Make the div focusable for keyboard events
+    >
+      {/* Add custom styles */}
+      <style jsx global>{customCalendarStyles}</style>
+      
       <style jsx global>{`
         /* Override react-big-calendar default styles for a more modern look */
         .rbc-calendar {
           font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+          height: 100% !important;
         }
         .rbc-header {
           font-weight: 500;
@@ -121,6 +338,7 @@ export default function CalendarView({ events }: CalendarViewProps) {
           border: 1px solid #f1f5f9;
           border-radius: 8px;
           overflow: hidden;
+          height: calc(100% - 70px) !important;
         }
         .rbc-month-row {
           min-height: 120px; /* Increase the minimum height of rows */
@@ -170,6 +388,7 @@ export default function CalendarView({ events }: CalendarViewProps) {
           border: 1px solid #f1f5f9;
           border-radius: 8px;
           overflow: hidden;
+          height: calc(100% - 70px) !important;
         }
         .rbc-time-header {
           border-bottom: 1px solid #f1f5f9;
@@ -214,25 +433,102 @@ export default function CalendarView({ events }: CalendarViewProps) {
           background-color: transparent;
           padding: 2px 5px;
         }
+        
+        /* Add focus outline for accessibility */
+        .h-full:focus {
+          outline: none;
+          box-shadow: 0 0 0 2px rgba(20, 184, 166, 0.3);
+          border-radius: 8px;
+        }
+        
+        /* Add a keyboard navigation hint */
+        .keyboard-hint {
+          position: absolute;
+          bottom: 10px;
+          right: 10px;
+          background-color: rgba(255, 255, 255, 0.9);
+          padding: 4px 8px;
+          border-radius: 4px;
+          font-size: 0.7rem;
+          color: #64748b;
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+          z-index: 10;
+          pointer-events: none;
+          opacity: 0;
+          transition: opacity 0.3s ease;
+        }
+        
+        .h-full:focus .keyboard-hint {
+          opacity: 1;
+        }
+        
+        /* Toast notification for event updates */
+        .event-update-toast {
+          position: fixed;
+          bottom: 20px;
+          left: 50%;
+          transform: translateX(-50%);
+          background-color: #14b8a6;
+          color: white;
+          padding: 10px 20px;
+          border-radius: 4px;
+          box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+          z-index: 1000;
+          font-size: 0.9rem;
+          opacity: 1;
+          transition: opacity 0.3s ease;
+        }
+        
+        .event-update-toast.fade-out {
+          opacity: 0;
+        }
+        
+        /* Drag handle indicator */
+        .rbc-event:hover::before {
+          content: '⋮⋮';
+          position: absolute;
+          top: 2px;
+          left: 2px;
+          font-size: 10px;
+          color: rgba(255, 255, 255, 0.7);
+        }
       `}</style>
       
-      <Calendar
+      <DragAndDropCalendar
+        ref={calendarRef as any}
         localizer={localizer}
         events={validEvents}
-        startAccessor="start"
-        endAccessor="end"
+        startAccessor={startAccessor}
+        endAccessor={endAccessor}
         style={{ height: "100%" }}
-        views={["month", "week", "day"]}
         view={view}
-        onView={(newView) => setView(newView as View)}
+        onView={setView as any}
+        date={currentDate}
+        onNavigate={setCurrentDate}
         onSelectEvent={handleSelectEvent}
+        onSelectSlot={handleSelectSlot}
+        selectable
+        resizable
+        onEventDrop={handleEventDrop}
+        onEventResize={handleEventResize}
         eventPropGetter={eventStyleGetter}
         dayPropGetter={dayPropGetter}
         slotPropGetter={slotPropGetter}
         components={{
           toolbar: CustomToolbar,
+          event: EventComponent,
+        }}
+        popup
+        formats={{
+          eventTimeRangeFormat: () => '',
+          timeGutterFormat: (date: Date) => format(date, 'h a'),
         }}
       />
+
+      {/* Keyboard navigation hint */}
+      <div className="keyboard-hint">
+        Use arrow keys to navigate: ←→ (prev/next) | ↑↓ (zoom in/out) | Home (today)
+      </div>
 
       {/* Event Details Modal */}
       {selectedEvent && (
@@ -249,51 +545,34 @@ export default function CalendarView({ events }: CalendarViewProps) {
                 </svg>
               </button>
             </div>
-            <div className="mb-4">
-              <div className="flex items-center text-gray-600 mb-3">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-teal-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-                <span>
-                  {format(new Date(selectedEvent.start), "PPP")}
-                </span>
+            <div className="space-y-3">
+              <div>
+                <p className="text-sm text-gray-500">Start Time</p>
+                <p className="text-gray-800">{format(selectedEvent.start, 'PPpp')}</p>
               </div>
-              <div className="flex items-center text-gray-600 mb-3">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-teal-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <span>
-                  {format(new Date(selectedEvent.start), "p")} - {format(new Date(selectedEvent.end), "p")}
-                </span>
+              <div>
+                <p className="text-sm text-gray-500">End Time</p>
+                <p className="text-gray-800">{format(selectedEvent.end, 'PPpp')}</p>
               </div>
               {selectedEvent.description && (
-                <div className="mt-4 p-3 bg-gray-50 rounded-md border border-gray-100">
-                  <p className="text-gray-700">{selectedEvent.description}</p>
+                <div>
+                  <p className="text-sm text-gray-500">Description</p>
+                  <p className="text-gray-800">{selectedEvent.description}</p>
                 </div>
               )}
-            </div>
-            {selectedEvent.url && (
-              <div className="mt-4">
-                <a
-                  href={selectedEvent.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center text-teal-600 hover:text-teal-800"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                  </svg>
-                  View Related Content
-                </a>
-              </div>
-            )}
-            <div className="mt-6 flex justify-end">
-              <button
-                onClick={handleCloseModal}
-                className="bg-teal-600 text-white px-4 py-2 rounded-md hover:bg-teal-700 transition-colors"
-              >
-                Close
-              </button>
+              {selectedEvent.url && (
+                <div>
+                  <p className="text-sm text-gray-500">URL</p>
+                  <a
+                    href={selectedEvent.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-teal-600 hover:text-teal-800 hover:underline break-all"
+                  >
+                    {selectedEvent.url}
+                  </a>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -303,7 +582,14 @@ export default function CalendarView({ events }: CalendarViewProps) {
 }
 
 // Custom toolbar component for the calendar
-function CustomToolbar({ label, onView, onNavigate, view }: any) {
+interface CustomToolbarProps {
+  label: string;
+  onView: (view: View) => void;
+  onNavigate: (action: 'PREV' | 'NEXT' | 'TODAY') => void;
+  view: View;
+}
+
+function CustomToolbar({ label, onView, onNavigate, view }: CustomToolbarProps) {
   return (
     <div className="flex flex-wrap justify-between items-center mb-6">
       <div className="flex items-center space-x-2 mb-2 sm:mb-0">
