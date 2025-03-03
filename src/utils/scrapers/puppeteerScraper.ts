@@ -46,108 +46,137 @@ function resolveUrl(baseUrl: string, relativeUrl: string | undefined): string | 
   }
 }
 
+interface ScrapingResult {
+  error?: { message: string };
+  content?: {
+    mainContent: string;
+    metadata: {
+      title?: string;
+      description?: string;
+      keywords?: string[] | string;
+      author?: string;
+    };
+  };
+}
+
 /**
  * Advanced scraper using Puppeteer for JavaScript-rendered content
  */
-export async function scrapePuppeteer(url: string): Promise<ScraperResult> {
+export async function scrapePuppeteer(url: string): Promise<ScrapingResult> {
+  let browser;
   try {
-    const browser = await puppeteer.launch({
+    browser = await puppeteer.launch({
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--disable-gpu',
+        '--window-size=1920x1080',
+      ]
     });
 
     const page = await browser.newPage();
-    await page.goto(url, { waitUntil: 'networkidle0' });
+    
+    // Set longer timeouts
+    await page.setDefaultNavigationTimeout(45000); // 45 seconds
+    await page.setDefaultTimeout(45000);
 
-    const content = await page.evaluate(() => {
-      // Helper function to safely get metadata
-      const getMetaContent = (name: string): string => {
-        const element = document.querySelector(`meta[name="${name}"], meta[property="${name}"]`);
-        return element?.getAttribute('content') ?? '';
-      };
-
-      // Get metadata
-      const metadata = {
-        title: document.title,
-        description: getMetaContent('description') ?? getMetaContent('og:description'),
-        keywords: getMetaContent('keywords').split(',').map(k => k.trim()),
-        author: getMetaContent('author'),
-        ogImage: getMetaContent('og:image')
-      };
-
-      // Get headings
-      const h1Tags = Array.from(document.querySelectorAll('h1')).map(h => h.textContent?.trim() ?? '');
-      const headings = Array.from(document.querySelectorAll('h1, h2, h3')).map(h => h.textContent?.trim() ?? '');
-
-      // Get links
-      const links = Array.from(document.querySelectorAll('a')).map(a => ({
-        text: a.textContent?.trim() ?? '',
-        href: a.href,
-        originalHref: a.getAttribute('href') ?? ''
-      }));
-
-      // Get images
-      const images = Array.from(document.querySelectorAll('img')).map(img => ({
-        src: img.src,
-        alt: img.alt ?? ''
-      }));
-
-      // Get tables
-      const tables = Array.from(document.querySelectorAll('table')).map(table => {
-        const headers = Array.from(table.querySelectorAll('th')).map(th => th.textContent?.trim() ?? '');
-        const rows = Array.from(table.querySelectorAll('tr')).map(tr =>
-          Array.from(tr.querySelectorAll('td')).map(td => td.textContent?.trim() ?? '')
-        );
-        return { headers, rows };
-      });
-
-      // Get structured data
-      const structuredData: Record<string, unknown>[] = [];
-      document.querySelectorAll('script[type="application/ld+json"]').forEach(script => {
-        try {
-          if (script.textContent) {
-            const data = JSON.parse(script.textContent);
-            if (data && typeof data === 'object') {
-              structuredData.push(data as Record<string, unknown>);
-            }
-          }
-        } catch {
-          // Ignore parsing errors
-        }
-      });
-
-      // Get main content
-      const mainContent = document.body.textContent?.trim() ?? '';
-
-      return {
-        metadata,
-        headings: { h1Tags, headings },
-        links,
-        images,
-        tables,
-        structuredData,
-        mainContent
-      } as ScrapedContent;
+    // Block unnecessary resources to speed up loading
+    await page.setRequestInterception(true);
+    page.on('request', (request) => {
+      const resourceType = request.resourceType();
+      if (['image', 'stylesheet', 'font', 'media'].includes(resourceType)) {
+        request.abort();
+      } else {
+        request.continue();
+      }
     });
 
-    // Take screenshot
-    const screenshot = await page.screenshot({ encoding: 'base64' });
-    
-    await browser.close();
+    // Navigate to the page
+    const response = await page.goto(url, {
+      waitUntil: 'networkidle0',
+      timeout: 45000
+    });
+
+    if (!response) {
+      throw new Error('Failed to get response from page');
+    }
+
+    const status = response.status();
+    if (status !== 200) {
+      throw new Error(`Page returned status code ${status}`);
+    }
+
+    // Extract metadata with timeout
+    const metadata = await Promise.race([
+      page.evaluate(() => ({
+        title: document.title,
+        description: document.querySelector('meta[name="description"]')?.getAttribute('content') || undefined,
+        keywords: document.querySelector('meta[name="keywords"]')?.getAttribute('content') || undefined,
+        author: document.querySelector('meta[name="author"]')?.getAttribute('content') || undefined
+      })),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Metadata extraction timed out')), 10000))
+    ]) as {
+      title?: string;
+      description?: string;
+      keywords?: string;
+      author?: string;
+    };
+
+    // Extract main content with timeout
+    const mainContent = await Promise.race([
+      page.evaluate(() => {
+        // Remove script tags, style tags, and comments
+        const scripts = document.getElementsByTagName('script');
+        const styles = document.getElementsByTagName('style');
+        Array.from(scripts).forEach(script => script.remove());
+        Array.from(styles).forEach(style => style.remove());
+
+        // Get the article content or main content
+        const article = document.querySelector('article');
+        const main = document.querySelector('main');
+        const content = document.querySelector('.content');
+        
+        let mainContent = '';
+        if (article) {
+          mainContent = article.textContent || '';
+        } else if (main) {
+          mainContent = main.textContent || '';
+        } else if (content) {
+          mainContent = content.textContent || '';
+        } else {
+          // Fallback to body content
+          mainContent = document.body.textContent || '';
+        }
+
+        return mainContent.trim();
+      }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Content extraction timed out')), 15000))
+    ]) as string;
+
+    if (!mainContent || mainContent.length < 100) {
+      throw new Error('Failed to extract meaningful content from the page');
+    }
 
     return {
       content: {
-        ...content,
-        screenshot: `data:image/png;base64,${screenshot}`
+        mainContent,
+        metadata
       }
     };
-  } catch (e) {
+
+  } catch (error) {
+    console.error('Error in Puppeteer scraper:', error);
     return {
       error: {
-        name: e instanceof Error ? e.name : 'UnknownError',
-        message: e instanceof Error ? e.message : 'An unknown error occurred',
-        stack: e instanceof Error ? e.stack : undefined
+        message: error instanceof Error ? error.message : 'Unknown error occurred while scraping'
       }
     };
+  } finally {
+    if (browser) {
+      await browser.close();
+    }
   }
 } 

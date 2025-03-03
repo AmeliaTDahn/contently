@@ -311,7 +311,7 @@ export const ScraperTool: React.FC = () => {
                 Analyzing...
               </>
             ) : (
-              'Analyze URL'
+              'Add URL'
             )}
           </button>
         </div>

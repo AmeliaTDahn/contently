@@ -137,3 +137,128 @@ export const urlContent = createTable(
     ),
   })
 );
+
+// Table for storing content analytics results
+export const contentAnalytics = createTable(
+  "content_analytics",
+  {
+    id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
+    analyzedUrlId: integer("analyzed_url_id")
+      .notNull()
+      .references(() => analyzedUrls.id, { onDelete: "cascade" }),
+    // Core scores with explanations
+    engagementScore: integer("engagement_score").notNull(),
+    engagementExplanation: text("engagement_explanation"),
+    contentQualityScore: integer("content_quality_score").notNull(),
+    contentQualityExplanation: text("content_quality_explanation"),
+    readabilityScore: integer("readability_score").notNull(),
+    readabilityExplanation: text("readability_explanation"),
+    seoScore: integer("seo_score").notNull(),
+    seoExplanation: text("seo_explanation"),
+    // Enhanced analysis fields with explanations
+    industry: varchar("industry", { length: 100 }).notNull().default('General'),
+    industryExplanation: text("industry_explanation"),
+    scope: varchar("scope", { length: 50 }).notNull().default('General'),
+    scopeExplanation: text("scope_explanation"),
+    topics: json("topics").$type<string[]>().notNull().default([]),
+    topicsExplanation: text("topics_explanation"),
+    // Writing quality metrics with explanations
+    writingQuality: json("writing_quality").$type<{
+      grammar: number;
+      clarity: number;
+      structure: number;
+      vocabulary: number;
+      overall: number;
+      explanations?: {
+        grammar: string;
+        clarity: string;
+        structure: string;
+        vocabulary: string;
+        overall: string;
+      };
+    }>().notNull(),
+    // Additional metrics with explanations
+    audienceLevel: varchar("audience_level", { length: 50 }).notNull().default('General'),
+    audienceLevelExplanation: text("audience_level_explanation"),
+    contentType: varchar("content_type", { length: 100 }).notNull().default('Article'),
+    contentTypeExplanation: text("content_type_explanation"),
+    tone: varchar("tone", { length: 50 }).notNull().default('Neutral'),
+    toneExplanation: text("tone_explanation"),
+    estimatedReadTime: integer("estimated_read_time").notNull().default(0),
+    // Keywords and analysis with explanations
+    keywords: json("keywords").$type<Array<{
+      text: string;
+      count: number;
+    }>>().notNull().default([]),
+    keywordAnalysis: json("keyword_analysis").$type<{
+      distribution: string;
+      overused: string[];
+      underused: string[];
+      explanation?: string;
+    }>().notNull(),
+    // Insights
+    insights: json("insights").$type<{
+      engagement: string[];
+      content: string[];
+      readability: string[];
+      seo: string[];
+    }>().notNull(),
+    // Stats
+    wordCountStats: json("word_count_stats").$type<{
+      count: number;
+      min: number;
+      max: number;
+      avg: number;
+      sum: number;
+      explanations?: {
+        count: string;
+        min: string;
+        max: string;
+        avg: string;
+        sum: string;
+      };
+    }>().notNull(),
+    articlesPerMonth: json("articles_per_month").$type<Array<{
+      date: string;
+      count: number;
+      explanation?: string;
+    }>>().notNull().default([]),
+    // Engagement metrics with explanations
+    engagement: json("engagement").$type<{
+      likes: number;
+      comments: number;
+      shares: number;
+      bookmarks: number;
+      totalViews: number;
+      uniqueViews: number;
+      avgTimeOnPage: number;
+      bounceRate: number;
+      socialShares: {
+        facebook: number;
+        twitter: number;
+        linkedin: number;
+        pinterest: number;
+      };
+      explanations?: {
+        likes: string;
+        comments: string;
+        shares: string;
+        bookmarks: string;
+        totalViews: string;
+        uniqueViews: string;
+        avgTimeOnPage: string;
+        bounceRate: string;
+        socialShares: string;
+      };
+    }>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .$onUpdate(() => new Date()),
+  },
+  (table) => ({
+    analyzedUrlIdIndex: index("analytics_analyzed_url_id_idx").on(table.analyzedUrlId),
+  })
+);

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Image from 'next/image';
+import { Loader2 } from 'lucide-react';
 import type { ScrapedContent } from '@/utils/scrapers';
 
 interface ApiResponse {
@@ -79,36 +80,65 @@ export const UrlScraper: React.FC<UrlScraperProps> = ({ onAnalyze }) => {
                 : 'bg-teal-600 text-white hover:bg-teal-700'
             }`}
           >
-            {loading ? 'Scraping...' : 'Scrape'}
+            {loading ? (
+              <div className="flex items-center">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Scraping...
+              </div>
+            ) : (
+              'Scrape'
+            )}
           </button>
         </div>
       </form>
 
+      {loading && (
+        <div className="bg-teal-50 border-l-4 border-teal-400 p-4 mb-4">
+          <div className="flex items-center">
+            <Loader2 className="h-5 w-5 text-teal-500 animate-spin" />
+            <div className="ml-3">
+              <p className="text-sm text-teal-700">Analyzing content, please wait...</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {error && (
-        <div className="text-red-500 mb-4">{error}</div>
+        <div className="bg-red-50 border-l-4 border-red-400 p-4 mb-4">
+          <div className="flex">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <p className="text-sm text-red-700">{error}</p>
+            </div>
+          </div>
+        </div>
       )}
 
       {scrapedContent && (
         <div className="space-y-8">
           <section className="bg-white p-6 rounded-lg shadow-md">
-            <h2 className="text-2xl font-bold mb-4">Metadata</h2>
+            <h2 className="text-2xl font-bold mb-4 text-gray-800">Metadata</h2>
             <dl className="grid grid-cols-2 gap-4">
               <div>
-                <dt className="font-medium text-gray-500">Title</dt>
-                <dd className="mt-1">{scrapedContent.metadata.title}</dd>
+                <dt className="font-medium text-teal-600">Title</dt>
+                <dd className="mt-1 text-gray-700">{scrapedContent.metadata.title}</dd>
               </div>
               <div>
-                <dt className="font-medium text-gray-500">Description</dt>
-                <dd className="mt-1">{scrapedContent.metadata.description}</dd>
+                <dt className="font-medium text-teal-600">Description</dt>
+                <dd className="mt-1 text-gray-700">{scrapedContent.metadata.description}</dd>
               </div>
               {scrapedContent.metadata.keywords.length > 0 && (
                 <div className="col-span-2">
-                  <dt className="font-medium text-gray-500">Keywords</dt>
+                  <dt className="font-medium text-teal-600">Keywords</dt>
                   <dd className="mt-1 flex flex-wrap gap-2">
                     {scrapedContent.metadata.keywords.map((keyword, index) => (
                       <span
                         key={index}
-                        className="px-2 py-1 bg-gray-100 rounded-md text-sm"
+                        className="px-2 py-1 bg-teal-100 text-teal-800 rounded-md text-sm"
                       >
                         {keyword}
                       </span>
@@ -121,13 +151,13 @@ export const UrlScraper: React.FC<UrlScraperProps> = ({ onAnalyze }) => {
 
           {scrapedContent.headings.headings.length > 0 && (
             <section className="bg-white p-6 rounded-lg shadow-md">
-              <h2 className="text-2xl font-bold mb-4">Headings</h2>
+              <h2 className="text-2xl font-bold mb-4 text-gray-800">Headings</h2>
               <div className="space-y-2">
                 {scrapedContent.headings.headings.map((heading, index) => (
                   <div
                     key={index}
                     className={`pl-${index < scrapedContent.headings.h1Tags.length ? 4 : 8} ${
-                      index < scrapedContent.headings.h1Tags.length ? 'text-xl font-medium' : 'text-lg font-medium'
+                      index < scrapedContent.headings.h1Tags.length ? 'text-xl font-medium text-teal-700' : 'text-lg font-medium text-teal-600'
                     }`}
                   >
                     {heading}
@@ -139,7 +169,7 @@ export const UrlScraper: React.FC<UrlScraperProps> = ({ onAnalyze }) => {
 
           {scrapedContent.images.length > 0 && (
             <section className="bg-white p-6 rounded-lg shadow-md">
-              <h2 className="text-2xl font-bold mb-4">Images</h2>
+              <h2 className="text-2xl font-bold mb-4 text-gray-800">Images</h2>
               <div className="grid grid-cols-2 gap-4">
                 {scrapedContent.images.map((image, index) => (
                   <div key={index} className="relative">
@@ -148,10 +178,10 @@ export const UrlScraper: React.FC<UrlScraperProps> = ({ onAnalyze }) => {
                       alt={image.alt}
                       width={400}
                       height={300}
-                      className="rounded-lg"
+                      className="rounded-lg border border-teal-100"
                     />
                     {image.alt && (
-                      <p className="mt-2 text-sm text-gray-500">{image.alt}</p>
+                      <p className="mt-2 text-sm text-teal-600">{image.alt}</p>
                     )}
                   </div>
                 ))}
@@ -161,7 +191,7 @@ export const UrlScraper: React.FC<UrlScraperProps> = ({ onAnalyze }) => {
 
           {scrapedContent.links.length > 0 && (
             <section className="bg-white p-6 rounded-lg shadow-md">
-              <h2 className="text-2xl font-bold mb-4">Links</h2>
+              <h2 className="text-2xl font-bold mb-4 text-gray-800">Links</h2>
               <ul className="space-y-2">
                 {scrapedContent.links.map((link, index) => (
                   <li key={index}>
@@ -169,7 +199,7 @@ export const UrlScraper: React.FC<UrlScraperProps> = ({ onAnalyze }) => {
                       href={link.href}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-teal-600 hover:text-teal-700"
+                      className="text-teal-600 hover:text-teal-800 underline"
                     >
                       {link.text || link.href}
                     </a>
