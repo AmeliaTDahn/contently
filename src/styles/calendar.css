@@ -10,10 +10,29 @@
 }
 
 .rbc-header {
-  font-weight: 500;
+  font-weight: 600;
   font-size: 0.875rem;
-  padding: 12px 0;
+  padding: 8px 4px;
   border-bottom: 1px solid #f1f5f9;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 60px;
+  overflow: visible;
+}
+
+.rbc-header span {
+  display: block;
+  white-space: nowrap;
+  margin-bottom: 4px;
+  width: 100%;
+  text-align: center;
+}
+
+.rbc-header.rbc-today {
+  background-color: transparent !important;
+  color: #0f766e;
+  font-weight: 600;
 }
 
 .rbc-month-view {
@@ -22,11 +41,37 @@
   overflow: hidden;
   height: 100% !important;
   min-height: 100% !important;
+  display: flex;
+  flex-direction: column;
+}
+
+.rbc-month-header {
+  flex: 0 0 auto;
 }
 
 .rbc-month-row {
+  flex: 1 1 0;
   min-height: 120px;
   overflow: visible;
+  display: flex;
+  flex-direction: column;
+}
+
+.rbc-row-content {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.rbc-row {
+  flex: 1 1 0;
+  display: flex;
+}
+
+.rbc-row-bg {
+  flex: 1 1 0;
+  display: flex;
 }
 
 .rbc-day-bg {
@@ -66,23 +111,44 @@
 }
 
 .rbc-row-segment {
+  flex: 1 1 0;
   padding: 2px 3px;
 }
 
 .rbc-date-cell {
+  flex: 1 1 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
   font-size: 0.9rem;
-  padding: 8px;
+  padding: 8px 4px;
   text-align: center;
+  overflow: visible;
 }
 
 .rbc-date-cell > a {
-  color: #475569;
+  color: #1f2937;
   font-weight: 500;
+  font-size: 1rem;
+  text-decoration: none;
 }
 
 .rbc-date-cell.rbc-now > a {
   color: #0f766e;
   font-weight: 600;
+  position: relative;
+}
+
+.rbc-date-cell.rbc-now > a::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background-color: #0f766e;
 }
 
 .rbc-time-view {

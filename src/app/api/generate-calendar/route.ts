@@ -6,16 +6,41 @@ import { aggregateUserAnalytics } from '@/utils/aggregateAnalytics';
 import { createCalendarPrompt } from '@/utils/createPrompt';
 import { generateCalendar } from '@/utils/generateCalendar';
 
+interface CalendarPreferences {
+  postsPerMonth: number;
+  contentTypes: string[];
+  customPrompt?: string;
+  contentPlan: Record<string, number>;
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const { userId, preferences } = await req.json() as {
+    console.log('Received calendar generation request');
+    const body = await req.json();
+    console.log('Request body:', body);
+
+    const { userId, preferences } = body as {
       userId: string;
-      preferences: { postsPerMonth: number; contentTypes: string[] };
+      preferences: CalendarPreferences;
     };
 
-    if (!userId || !preferences?.postsPerMonth || !preferences?.contentTypes) {
+    if (!userId || !preferences?.contentPlan || !preferences?.contentTypes) {
+      console.error('Missing required fields:', { userId, preferences });
       return NextResponse.json(
-        { error: 'Missing required fields: userId, postsPerMonth, or contentTypes' },
+        { error: 'Missing required fields: userId, contentPlan, or contentTypes' },
+        { status: 400 }
+      );
+    }
+
+    // Validate that contentPlan matches contentTypes
+    const totalPosts = Object.values(preferences.contentPlan).reduce((sum, count) => sum + count, 0);
+    console.log('Total posts to generate:', totalPosts);
+    console.log('Content plan:', preferences.contentPlan);
+    
+    if (totalPosts === 0) {
+      console.error('No posts specified in content plan');
+      return NextResponse.json(
+        { error: 'Please specify at least one post in the content plan' },
         { status: 400 }
       );
     }
@@ -23,7 +48,9 @@ export async function POST(req: NextRequest) {
     // Aggregate analytics data
     let aggregatedAnalytics;
     try {
+      console.log('Aggregating analytics for user:', userId);
       aggregatedAnalytics = await aggregateUserAnalytics(userId);
+      console.log('Analytics aggregated successfully');
     } catch (error) {
       console.error('Error aggregating analytics:', error);
       return NextResponse.json(
@@ -33,12 +60,16 @@ export async function POST(req: NextRequest) {
     }
 
     // Generate prompt for OpenAI
+    console.log('Generating prompt with preferences:', preferences);
     const prompt = createCalendarPrompt(aggregatedAnalytics, preferences);
+    console.log('Generated prompt:', prompt);
 
     // Get calendar from OpenAI
     let calendarData;
     try {
+      console.log('Requesting calendar from OpenAI');
       calendarData = await generateCalendar(prompt);
+      console.log('Received calendar data:', calendarData);
     } catch (error) {
       console.error('Error generating calendar with OpenAI:', error);
       return NextResponse.json(
@@ -49,13 +80,33 @@ export async function POST(req: NextRequest) {
 
     // Store in database
     try {
-      const [newCalendar] = await db
+      console.log('Storing calendar in database');
+      const result = await db
         .insert(contentCalendars)
         .values({
           userId,
           preferences,
         })
         .returning();
+
+      if (!result || result.length === 0) {
+        console.error('Failed to create calendar record');
+        return NextResponse.json(
+          { error: 'Failed to create calendar record' },
+          { status: 500 }
+        );
+      }
+
+      const newCalendar = result[0];
+      if (!newCalendar || !newCalendar.id) {
+        console.error('Invalid calendar record:', newCalendar);
+        return NextResponse.json(
+          { error: 'Invalid calendar record created' },
+          { status: 500 }
+        );
+      }
+
+      console.log('Created calendar record:', newCalendar);
 
       const entries = calendarData.map((entry) => ({
         contentCalendarId: newCalendar.id,
@@ -65,11 +116,13 @@ export async function POST(req: NextRequest) {
         rationale: entry.rationale,
       }));
 
+      console.log('Storing calendar entries:', entries);
       const insertedEntries = await db
         .insert(calendarEntries)
         .values(entries)
         .returning();
 
+      console.log('Successfully stored entries:', insertedEntries);
       return NextResponse.json(
         { calendarId: newCalendar.id, entries: insertedEntries },
         { status: 200 }

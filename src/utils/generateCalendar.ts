@@ -31,7 +31,7 @@ export async function generateCalendar(prompt: string): Promise<CalendarEntry[]>
         {
           role: 'system',
           content:
-            'You are an AI content strategist tasked with creating an optimized content calendar. Return the response as a JSON object with a "calendar" array containing the entries. Dates should be in YYYY-MM-DD format and should be evenly distributed across the next 3 months, starting from tomorrow.',
+            'You are an AI content strategist tasked with creating an optimized content calendar. Return the response as a JSON object with a "calendar" array containing the entries. Dates should be in YYYY-MM-DD format and should be evenly distributed across the next month, starting from tomorrow. Each content type should have exactly the number of posts specified in the prompt.',
         },
         { role: 'user', content: prompt },
       ],
@@ -52,6 +52,7 @@ export async function generateCalendar(prompt: string): Promise<CalendarEntry[]>
 
     // Get tomorrow's date as the starting point
     const tomorrow = DateTime.now().plus({ days: 1 }).startOf('day');
+    const oneMonthLater = tomorrow.plus({ months: 1 });
 
     // Validate and process each entry in the calendar
     const calendar = parsedResponse.calendar.map((entry: OpenAICalendarEntry, index: number) => {
@@ -60,12 +61,15 @@ export async function generateCalendar(prompt: string): Promise<CalendarEntry[]>
       }
 
       // Calculate the date for this entry
-      // Distribute entries evenly across 3 months
-      const daysToAdd = Math.floor((index * 90) / parsedResponse.calendar.length);
+      // Distribute entries evenly across 1 month (approximately 30 days)
+      const daysToAdd = Math.floor((index * 30) / parsedResponse.calendar.length);
       const entryDate = tomorrow.plus({ days: daysToAdd });
 
+      // If the date would be beyond one month, adjust it back
+      const finalDate = entryDate > oneMonthLater ? oneMonthLater.minus({ days: 1 }) : entryDate;
+
       return {
-        date: entryDate.toFormat('yyyy-MM-dd'),
+        date: finalDate.toFormat('yyyy-MM-dd'),
         contentType: entry.contentType,
         topic: entry.topic,
         rationale: entry.rationale,

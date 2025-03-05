@@ -39,16 +39,21 @@ export function createCalendarPrompt(
         contentLength: Record<string, number>;
       };
     },
-    preferences: { postsPerMonth: number; contentTypes: string[] }
+    preferences: { 
+      postsPerMonth: number; 
+      contentTypes: string[];
+      customPrompt?: string;
+      contentPlan?: Record<string, number>;
+    }
   ): string {
     const { contentTypeStats, topTopics, globalInsights, keywordAnalysis, engagementPatterns } = aggregatedAnalytics;
-    const { postsPerMonth, contentTypes } = preferences;
+    const { postsPerMonth, contentTypes, customPrompt } = preferences;
   
     let prompt = `You are an expert content strategist analyzing a specific set of URLs to create a highly focused content calendar. Your task is to generate content suggestions that are STRICTLY based on the themes and topics found in the analyzed URLs. DO NOT generate generic content or topics not directly related to the analyzed content.
 
 IMPORTANT: You must stay within the exact topic areas found in the analyzed URLs. For example, if the URLs are about content optimization and recipes, ALL suggestions must be about content optimization or recipes - no generic topics like "morning routines" or "fitness tips" unless these are explicitly present in the analyzed content.
 
-Here is the analysis of the specific URLs and their content:\n\n`;
+${customPrompt ? `CUSTOM REQUIREMENTS: ${customPrompt}\n\n` : ''}Here is the analysis of the specific URLs and their content:\n\n`;
   
     // Add historical content performance with emphasis on specific topics
     prompt += `Exact Topics and Themes from Analyzed URLs:\n`;
@@ -91,36 +96,32 @@ Here is the analysis of the specific URLs and their content:\n\n`;
       .map(([day]) => day)
       .join(', ')}\n`;
   
-    prompt += `\nCreate a ${postsPerMonth * 3}-post content calendar for the next 3 months using these content types: ${contentTypes.join(
-      ', '
-    )}. 
+    prompt += `\nCreate a content calendar for the next month with EXACTLY the following distribution:
+${contentTypes.map(type => `- ${type}: ${preferences.contentPlan?.[type] || 0} posts`).join('\n')}
 
 CRITICAL REQUIREMENTS:
-1. ONLY suggest topics that are direct extensions of the analyzed content themes
-2. DO NOT include any generic topics or themes not found in the analyzed URLs
-3. Each suggestion must clearly relate to one of the core topics identified above
-4. Stay strictly within the established content areas - no branching into unrelated subjects
+1. Generate EXACTLY the number of posts specified for each content type - no more, no less
+2. All posts must be scheduled within the next month (30 days) from tomorrow
+3. ONLY suggest topics that are direct extensions of the analyzed content themes
+4. DO NOT include any generic topics or themes not found in the analyzed URLs
+5. Each suggestion must clearly relate to one of the core topics identified above
+6. Stay strictly within the established content areas - no branching into unrelated subjects
+${customPrompt ? `7. IMPORTANT: ${customPrompt}` : ''}
 
 For each post, provide:
-- Date (YYYY-MM-DD)
-- Content Type (from specified types)
+- Date (YYYY-MM-DD format, must be within the next 30 days)
+- Content Type (must match one of: ${contentTypes.join(', ')})
 - Topic (must be directly related to analyzed content)
-- Rationale (explain specifically which analyzed content this builds upon and how it extends those exact themes)
+- Rationale (explain specifically which analyzed content this builds upon)
 
 Example format (adjust topics to match your actual analyzed content):
 {
   "calendar": [
     {
-      "date": "2024-04-01",
+      "date": "2024-03-05",
       "contentType": "blog",
       "topic": "Advanced Content Optimization Techniques for E-commerce Pages",
       "rationale": "Builds upon our existing content optimization guide, focusing on the e-commerce aspect mentioned in URL #3..."
-    },
-    {
-      "date": "2024-04-03",
-      "contentType": "blog",
-      "topic": "Spring Mediterranean Recipe Collection",
-      "rationale": "Expands on our Mediterranean cooking series from URL #2, incorporating seasonal ingredients..."
     }
   ]
 }

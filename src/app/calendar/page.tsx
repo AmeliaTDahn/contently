@@ -33,31 +33,53 @@ interface CalendarEntry {
 }
 
 const contentTypes: ContentType[] = [
-  { id: 'instagram', label: 'Instagram post' },
-  { id: 'youtube', label: 'YouTube video' },
-  { id: 'facebook', label: 'Facebook post' },
-  { id: 'blog', label: 'Blog post' },
+  { id: 'instagram', label: 'Instagram' },
+  { id: 'youtube', label: 'YouTube' },
+  { id: 'facebook', label: 'Facebook' },
+  { id: 'twitter', label: 'Twitter/X' },
+  { id: 'linkedin', label: 'LinkedIn' },
+  { id: 'tiktok', label: 'TikTok' },
+  { id: 'blog', label: 'Blog Post' },
+  { id: 'newsletter', label: 'Newsletter' },
+  { id: 'podcast', label: 'Podcast' },
+  { id: 'pinterest', label: 'Pinterest' },
+  { id: 'medium', label: 'Medium' },
+  { id: 'threads', label: 'Threads' }
 ];
 
+// Function to get color for a content type
 const getEventColor = (contentType: string | undefined): string => {
-  const colors: Record<string, string> = {
+  const colors = {
     instagram: '#E1306C',
     youtube: '#FF0000',
     facebook: '#4267B2',
+    twitter: '#1DA1F2',
+    linkedin: '#0077B5',
+    tiktok: '#000000',
     blog: '#14b8a6',
+    newsletter: '#6366f1',
+    podcast: '#8B4513',
+    pinterest: '#E60023',
+    medium: '#000000',
+    threads: '#101010',
     default: '#6366f1'
-  };
-  return colors[contentType?.toLowerCase() ?? 'default'] || colors.default;
+  } as const;
+
+  const key = contentType?.toLowerCase() ?? 'default';
+  return colors[key as keyof typeof colors] || colors.default;
 };
 
 export default function CalendarPage() {
   const [contentPlan, setContentPlan] = useState<Record<string, number>>(() =>
     contentTypes.reduce((acc, type) => ({ ...acc, [type.id]: 0 }), {})
   );
-  const [postsPerMonth, setPostsPerMonth] = useState<number>(0);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [customPrompt, setCustomPrompt] = useState<string>('');
+
+  // Calculate total posts from content plan
+  const totalPosts = Object.values(contentPlan).reduce((sum, count) => sum + count, 0);
 
   // Assume userId comes from auth context or props; hardcoding for simplicity
   const userId = 'example-user-id'; // Replace with actual user ID from auth
@@ -73,37 +95,83 @@ export default function CalendarPage() {
       })
       .map((type) => type.id);
 
-    if (selectedTypes.length === 0 || postsPerMonth <= 0) {
-      setError('Please specify at least one content type and posts per month.');
+    console.log('Selected content types:', selectedTypes);
+    console.log('Content plan:', contentPlan);
+
+    if (selectedTypes.length === 0 || totalPosts <= 0) {
+      setError('Please specify at least one post type.');
       setLoading(false);
       return;
     }
 
     try {
+      const requestBody = {
+        userId,
+        preferences: {
+          contentTypes: selectedTypes,
+          contentPlan,
+          customPrompt: customPrompt.trim() || undefined,
+        },
+      };
+
+      console.log('Sending request to API:', requestBody);
+
       const response = await fetch('/api/generate-calendar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId,
-          preferences: {
-            postsPerMonth,
-            contentTypes: selectedTypes,
-          },
-        }),
+        body: JSON.stringify(requestBody),
       });
 
+      console.log('API Response status:', response.status);
+      const responseText = await response.text();
+      console.log('API Response text:', responseText);
+
       if (!response.ok) {
-        throw new Error('Failed to generate calendar');
+        throw new Error(`Failed to generate calendar: ${responseText}`);
       }
 
-      const data = await response.json();
-      console.log('API Response:', data);
+      const data = JSON.parse(responseText);
+      console.log('Parsed API Response:', data);
 
-      const { entries } = data as { calendarId: number; entries: CalendarEntry[] };
+      if (!data.entries || !Array.isArray(data.entries)) {
+        throw new Error('Invalid response format: missing entries array');
+      }
+
+      const { entries } = data;
       console.log('Calendar Entries:', entries);
 
+      // Type guard function to validate entry format
+      const isValidCalendarEntry = (entry: unknown): entry is CalendarEntry => {
+        if (!entry || typeof entry !== 'object') return false;
+        
+        const e = entry as Record<string, unknown>;
+        const contentType = e.contentType;
+        
+        if (
+          !('suggestedDate' in e) ||
+          !('contentType' in e) ||
+          !('topic' in e) ||
+          !('rationale' in e) ||
+          typeof e.suggestedDate !== 'string' ||
+          typeof contentType !== 'string' ||
+          !contentType ||
+          typeof e.topic !== 'string' ||
+          typeof e.rationale !== 'string'
+        ) {
+          return false;
+        }
+
+        // Brand the contentType as a valid ContentType
+        return true;
+      };
+
+      // Validate entries before mapping
+      if (!entries.every(isValidCalendarEntry)) {
+        throw new Error('Invalid entry format: missing required fields');
+      }
+
       // Convert entries to calendar events
-      const calendarEvents: CalendarEvent[] = entries.map((entry) => {
+      const calendarEvents: CalendarEvent[] = entries.map((entry: CalendarEntry) => {
         console.log('Processing entry:', entry);
         const startDate = new Date(entry.suggestedDate);
         console.log('Start date:', startDate);
@@ -117,18 +185,17 @@ export default function CalendarPage() {
         const endDate = new Date(startDate);
         endDate.setHours(startDate.getHours() + 1); // Set end time to 1 hour after start
 
-        const contentType = entry.contentType || 'default';
-
-        const event = {
-          id: `${contentType}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-          title: `${contentType} - ${entry.topic}`,
+        // Since we've validated the entry with isValidCalendarEntry, we know contentType is a string
+        const event: CalendarEvent = {
+          id: `${entry.contentType}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          title: `${entry.contentType} - ${entry.topic}`,
           start: startDate,
           end: endDate,
           description: entry.rationale,
-          resource: contentType,
-          className: `event-${contentType.toLowerCase()}`,
+          resource: entry.contentType,
+          className: `event-${entry.contentType}`,
           style: {
-            backgroundColor: getEventColor(contentType),
+            backgroundColor: getEventColor(entry.contentType),
             border: 'none',
             borderRadius: '4px',
           }
@@ -160,6 +227,7 @@ export default function CalendarPage() {
       }, 3000);
 
     } catch (err) {
+      console.error('Calendar generation error:', err);
       setError(err instanceof Error ? err.message : 'An unknown error occurred');
     } finally {
       setLoading(false);
@@ -171,38 +239,57 @@ export default function CalendarPage() {
     setEvents([]);
   };
 
+  // Helper function to ensure contentType is valid
+  const asContentType = (value: string): string & { __brand: 'ContentType' } => {
+    if (!value || typeof value !== 'string') {
+      throw new Error('Invalid content type');
+    }
+    return value as string & { __brand: 'ContentType' };
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       <Navbar />
       
-      <main className="flex-1 flex flex-col pt-8">
+      <main className="flex-1 flex flex-col pb-24">
         {/* Preferences Form */}
         <div className="bg-white shadow-sm border-b">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-            <div className="mb-8">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div className="mb-6">
               <h1 className="text-3xl font-semibold text-gray-900">Content Calendar</h1>
             </div>
 
-            <div className="space-y-8">
+            <div className="space-y-6">
+              {/* Custom Prompt Input */}
+              <div>
+                <label className="block">
+                  <span className="block text-sm font-medium text-gray-700 mb-2">
+                    Custom Instructions
+                    <span className="ml-1 text-gray-500 font-normal">
+                      (optional)
+                    </span>
+                  </span>
+                  <textarea
+                    value={customPrompt}
+                    onChange={(e) => setCustomPrompt(e.target.value)}
+                    placeholder="Add any specific requirements for your content calendar (e.g., 'Include posts about our upcoming product launch')"
+                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 h-24 resize-none"
+                  />
+                </label>
+              </div>
+
               {/* Content Type Inputs */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-6">
-                <div className="col-span-2 sm:col-span-1">
-                  <label className="block">
-                    <span className="block text-sm font-medium text-gray-700 mb-2">Posts per month</span>
-                    <input
-                      type="number"
-                      min="0"
-                      value={postsPerMonth}
-                      onChange={(e) => setPostsPerMonth(Math.max(0, Number(e.target.value)))}
-                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500"
-                    />
-                  </label>
-                </div>
-                
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
                 {contentTypes.map((type) => (
-                  <div key={type.id}>
+                  <div key={type.id} className="relative group">
                     <label className="block">
-                      <span className="block text-sm font-medium text-gray-700 mb-2">{type.label}</span>
+                      <span className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                        <span 
+                          className="inline-block w-3 h-3 rounded-full mr-2" 
+                          style={{ backgroundColor: getEventColor(type.id) }}
+                        />
+                        {type.label}
+                      </span>
                       <input
                         type="number"
                         min="0"
@@ -218,20 +305,27 @@ export default function CalendarPage() {
                     </label>
                   </div>
                 ))}
+                
+                {/* Total Posts Display */}
+                <div className="col-span-2 sm:col-span-3 lg:col-span-4 xl:col-span-6 pt-4 border-t">
+                  <p className="text-sm font-medium text-gray-700">
+                    Total posts to generate: <span className="text-teal-600">{totalPosts}</span>
+                  </p>
+                </div>
               </div>
 
               {/* Generate and Clear Buttons */}
               <div className="flex justify-end gap-4">
                 <button
                   onClick={clearEvents}
-                  className="inline-flex items-center justify-center py-3 px-8 border border-gray-300 shadow-sm text-base font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500"
+                  className="inline-flex items-center justify-center py-2 px-6 border border-gray-300 shadow-sm text-base font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500"
                 >
                   Clear Calendar
                 </button>
                 <button
                   onClick={generateCalendar}
                   disabled={loading}
-                  className="inline-flex items-center justify-center py-3 px-8 border border-transparent shadow-sm text-base font-medium rounded-md text-white bg-teal-600 hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 disabled:bg-gray-400 disabled:cursor-not-allowed min-w-[160px]"
+                  className="inline-flex items-center justify-center py-2 px-6 border border-transparent shadow-sm text-base font-medium rounded-md text-white bg-teal-600 hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 disabled:bg-gray-400 disabled:cursor-not-allowed min-w-[160px]"
                 >
                   {loading ? (
                     <>
@@ -257,9 +351,11 @@ export default function CalendarPage() {
           </div>
         </div>
 
-        {/* Calendar Display - Takes up remaining space */}
-        <div className="flex-1 bg-white">
-          <CalendarView events={events} />
+        {/* Calendar Display */}
+        <div className="flex-1 bg-white h-[calc(100vh-20rem)] min-h-[600px] overflow-y-auto">
+          <div className="h-full pb-24">
+            <CalendarView events={events} />
+          </div>
         </div>
       </main>
     </div>
