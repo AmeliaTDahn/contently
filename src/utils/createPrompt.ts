@@ -112,6 +112,7 @@ For each post, provide:
 - Date (YYYY-MM-DD format, must be within the next 30 days)
 - Content Type (must match one of: ${contentTypes.join(', ')})
 - Topic (must be directly related to analyzed content)
+- Description (detailed explanation of the content)
 - Rationale (explain specifically which analyzed content this builds upon)
 
 Example format (adjust topics to match your actual analyzed content):
@@ -121,6 +122,7 @@ Example format (adjust topics to match your actual analyzed content):
       "date": "2024-03-05",
       "contentType": "blog",
       "topic": "Advanced Content Optimization Techniques for E-commerce Pages",
+      "description": "A comprehensive guide covering advanced optimization strategies specifically tailored for e-commerce product pages and category listings",
       "rationale": "Builds upon our existing content optimization guide, focusing on the e-commerce aspect mentioned in URL #3..."
     }
   ]

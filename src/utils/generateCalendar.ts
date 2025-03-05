@@ -14,12 +14,14 @@ interface CalendarEntry {
   date: string;
   contentType: string;
   topic: string;
+  description: string;
   rationale: string;
 }
 
 interface OpenAICalendarEntry {
   contentType: string;
   topic: string;
+  description: string;
   rationale: string;
 }
 
@@ -56,7 +58,7 @@ export async function generateCalendar(prompt: string): Promise<CalendarEntry[]>
 
     // Validate and process each entry in the calendar
     const calendar = parsedResponse.calendar.map((entry: OpenAICalendarEntry, index: number) => {
-      if (!entry.contentType || !entry.topic || !entry.rationale) {
+      if (!entry.contentType || !entry.topic || !entry.description || !entry.rationale) {
         throw new Error('Invalid entry format in OpenAI response');
       }
 
@@ -72,6 +74,7 @@ export async function generateCalendar(prompt: string): Promise<CalendarEntry[]>
         date: finalDate.toFormat('yyyy-MM-dd'),
         contentType: entry.contentType,
         topic: entry.topic,
+        description: entry.description,
         rationale: entry.rationale,
       };
     });

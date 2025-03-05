@@ -18,6 +18,7 @@ interface CalendarEvent {
   url?: string;
   resource?: string;
   className?: string;
+  rationale?: string;
   style?: {
     backgroundColor?: string;
     border?: string;
@@ -29,6 +30,7 @@ interface CalendarEntry {
   suggestedDate: string;
   contentType: string;
   topic: string;
+  description: string;
   rationale: string;
 }
 
@@ -151,11 +153,13 @@ export default function CalendarPage() {
           !('suggestedDate' in e) ||
           !('contentType' in e) ||
           !('topic' in e) ||
+          !('description' in e) ||
           !('rationale' in e) ||
           typeof e.suggestedDate !== 'string' ||
           typeof contentType !== 'string' ||
           !contentType ||
           typeof e.topic !== 'string' ||
+          typeof e.description !== 'string' ||
           typeof e.rationale !== 'string'
         ) {
           return false;
@@ -191,7 +195,8 @@ export default function CalendarPage() {
           title: `${entry.contentType} - ${entry.topic}`,
           start: startDate,
           end: endDate,
-          description: entry.rationale,
+          description: entry.description,
+          rationale: entry.rationale,
           resource: entry.contentType,
           className: `event-${entry.contentType}`,
           style: {

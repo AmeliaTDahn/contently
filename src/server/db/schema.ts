@@ -292,7 +292,8 @@ export const calendarEntries = createTable(
       .references(() => contentCalendars.id, { onDelete: "cascade" }),
     suggestedDate: timestamp("suggested_date", { withTimezone: true }).notNull(),
     contentType: varchar("content_type", { length: 100 }).notNull(),
-    topic: varchar("topic", { length: 256 }),
+    topic: varchar("topic", { length: 256 }).notNull(),
+    description: text("description").notNull(),
     rationale: text("rationale").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)

@@ -113,6 +113,7 @@ export async function POST(req: NextRequest) {
         suggestedDate: new Date(entry.date),
         contentType: entry.contentType,
         topic: entry.topic,
+        description: `${entry.contentType} content about ${entry.topic}`,
         rationale: entry.rationale,
       }));
 
