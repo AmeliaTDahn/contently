@@ -267,8 +267,10 @@ export const contentCalendars = createTable(
     id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
     userId: varchar("user_id", { length: 256 }).notNull(),
     preferences: json("preferences").$type<{
-      postsPerMonth: number;
+      postsPerMonth?: number;
       contentTypes: string[];
+      customPrompt?: string;
+      contentPlan: Record<string, number>;
     }>().notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
@@ -293,6 +295,7 @@ export const calendarEntries = createTable(
     suggestedDate: timestamp("suggested_date", { withTimezone: true }).notNull(),
     contentType: varchar("content_type", { length: 100 }).notNull(),
     topic: varchar("topic", { length: 256 }),
+    description: text("description").notNull(),
     rationale: text("rationale").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)

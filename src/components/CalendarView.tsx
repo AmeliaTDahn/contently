@@ -56,6 +56,8 @@ interface CalendarEvent {
   end: Date;
   description?: string;
   url?: string;
+  rationale?: string;
+  contentType: string;
 }
 
 interface CalendarViewProps {
@@ -159,6 +161,9 @@ export default function CalendarView({ events }: CalendarViewProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const calendarRef = useRef<HTMLDivElement>(null);
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>(events);
+  const [error, setError] = useState<string | null>(null);
+  const [showModal, setShowModal] = useState(false);
+  const [showNewEventModal, setShowNewEventModal] = useState(false);
 
   // Add style tag to head
   useEffect(() => {
@@ -177,10 +182,12 @@ export default function CalendarView({ events }: CalendarViewProps) {
 
   const handleSelectEvent = (event: any) => {
     setSelectedEvent(event as CalendarEvent);
+    setShowModal(true);
   };
 
   const handleCloseModal = () => {
     setSelectedEvent(null);
+    setShowModal(false);
   };
 
   // Handle event resizing and dragging
@@ -233,22 +240,6 @@ export default function CalendarView({ events }: CalendarViewProps) {
       }, 300);
     }, 3000);
   }, [calendarEvents]);
-
-  // Handle creating a new event by selecting a time slot
-  const handleSelectSlot = useCallback((slotInfo: SlotInfo) => {
-    const title = window.prompt('Enter a title for your content:');
-    if (!title) return;
-    
-    const newEvent: CalendarEvent = {
-      id: `event-${Date.now()}`,
-      title,
-      start: slotInfo.start,
-      end: slotInfo.end,
-      description: 'New scheduled content'
-    };
-    
-    setCalendarEvents(prev => [...prev, newEvent]);
-  }, []);
 
   // Navigation handlers
   const navigateToday = useCallback(() => {
@@ -348,15 +339,33 @@ export default function CalendarView({ events }: CalendarViewProps) {
   const startAccessor = (event: object) => (event as CalendarEvent).start;
   const endAccessor = (event: object) => (event as CalendarEvent).end;
 
-  // Custom event styling
+  // Add content type options
+  const contentTypes = [
+    { id: 'instagram', label: 'Instagram', color: '#E1306C' },
+    { id: 'youtube', label: 'YouTube', color: '#FF0000' },
+    { id: 'twitter', label: 'Twitter', color: '#1DA1F2' },
+    { id: 'blog', label: 'Blog Post', color: '#14b8a6' },
+    { id: 'podcast', label: 'Podcast', color: '#8B5CF6' },
+  ];
+
+  const [newEvent, setNewEvent] = useState({
+    title: '',
+    description: '',
+    contentType: contentTypes[0].id,
+    start: new Date(),
+    end: new Date(),
+  });
+
+  // Update event style getter to use content type colors
   const eventStyleGetter = (event: any) => {
-    // Determine if this is a sample event or a real one from a URL
     const typedEvent = event as CalendarEvent;
-    const isSampleEvent = typedEvent.id.startsWith('sample-event-');
+    // Extract content type from the event ID (format: contentType-timestamp)
+    const contentType = typedEvent.id.split('-')[0];
+    const typeConfig = contentTypes.find(type => type.id === contentType);
     
     return {
       style: {
-        backgroundColor: isSampleEvent ? '#14b8a6' : '#3b82f6', // Teal for sample events, Blue for URL events
+        backgroundColor: typeConfig?.color || '#3b82f6',
         borderRadius: '4px',
         opacity: 0.9,
         color: 'white',
@@ -365,22 +374,60 @@ export default function CalendarView({ events }: CalendarViewProps) {
         fontWeight: 500,
         fontSize: '0.85rem',
         cursor: 'pointer',
+        padding: '4px 8px',
       },
-      className: typedEvent.url ? 'event-with-url' : '',
+      className: `event-${contentType}`,
     };
   };
-  
+
+  const handleNewEventSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    const event: CalendarEvent = {
+      id: `${newEvent.contentType}-${Date.now()}`,
+      ...newEvent,
+      title: `${newEvent.contentType} - ${newEvent.title}`,
+    };
+    
+    setCalendarEvents(prev => [...prev, event]);
+    setShowNewEventModal(false);
+    setNewEvent({
+      title: '',
+      description: '',
+      contentType: contentTypes[0].id,
+      start: new Date(),
+      end: new Date(),
+    });
+
+    // Show success toast
+    const toast = document.createElement('div');
+    toast.className = 'event-update-toast';
+    toast.textContent = 'Event added successfully';
+    document.body.appendChild(toast);
+    setTimeout(() => {
+      toast.classList.add('fade-out');
+      setTimeout(() => {
+        document.body.removeChild(toast);
+      }, 300);
+    }, 3000);
+  };
+
   // Custom event component to show URL source
   const EventComponent = ({ event }: any) => {
     const typedEvent = event as CalendarEvent;
+    const contentType = typedEvent.id.split('-')[0];
+    const typeConfig = contentTypes.find(type => type.id === contentType);
+    
     return (
-      <div title={typedEvent.url ? `Source: ${typedEvent.url}` : typedEvent.description}>
-        <div className="event-title">{typedEvent.title}</div>
-        {typedEvent.url && (
-          <div className="event-url text-xs opacity-80 truncate">
-            {new URL(typedEvent.url).hostname}
-          </div>
-        )}
+      <div 
+        title={typedEvent.description || typedEvent.title}
+        className="flex items-center space-x-1"
+      >
+        <div 
+          className="w-2 h-2 rounded-full flex-shrink-0" 
+          style={{ backgroundColor: typeConfig?.color || '#3b82f6' }}
+        />
+        <div className="event-title truncate">{typedEvent.title}</div>
       </div>
     );
   };
@@ -400,8 +447,82 @@ export default function CalendarView({ events }: CalendarViewProps) {
     },
   });
 
+  // Add delete event handler
+  const handleDeleteEvent = async (event: CalendarEvent) => {
+    try {
+      // Since event is of type CalendarEvent, id is guaranteed to be a string
+      const idParts = event.id.split('-');
+      const entryId = parseInt(idParts[idParts.length - 1]);
+      
+      if (isNaN(entryId)) {
+        throw new Error('Invalid event ID format');
+      }
+
+      const response = await fetch('/api/delete-calendar-entry', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ entryId }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete event');
+      }
+
+      // Update local state to remove the deleted event
+      setCalendarEvents((currentEvents: CalendarEvent[]) => {
+        return currentEvents.filter((e: CalendarEvent) => {
+          // Both e.id and event.id are guaranteed to be strings
+          return e.id !== event.id;
+        });
+      });
+      setSelectedEvent(null);
+      setShowModal(false);
+
+      // Show success toast
+      const toast = document.createElement('div');
+      toast.className = 'event-update-toast';
+      toast.textContent = 'Event deleted successfully';
+      document.body.appendChild(toast);
+      setTimeout(() => {
+        toast.classList.add('fade-out');
+        setTimeout(() => {
+          document.body.removeChild(toast);
+        }, 300);
+      }, 3000);
+    } catch (error) {
+      console.error('Error deleting event:', error);
+      setError(error instanceof Error ? error.message : 'Failed to delete event');
+    }
+  };
+
   return (
     <div className="h-[calc(100vh-13rem)]" ref={calendarRef} tabIndex={0}>
+      {/* Calendar Header */}
+      <div className="mb-6 flex items-center justify-between">
+        <div className="flex items-center space-x-2">
+          {contentTypes.map(type => (
+            <div key={type.id} className="flex items-center space-x-1">
+              <div 
+                className="w-3 h-3 rounded-full" 
+                style={{ backgroundColor: type.color }}
+              />
+              <span className="text-sm text-gray-600">{type.label}</span>
+            </div>
+          ))}
+        </div>
+        <button
+          onClick={() => setShowNewEventModal(true)}
+          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-teal-600 hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500"
+        >
+          <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          Add Content
+        </button>
+      </div>
+
       <DragAndDropCalendar
         localizer={localizer}
         events={calendarEvents}
@@ -417,7 +538,7 @@ export default function CalendarView({ events }: CalendarViewProps) {
         onSelectEvent={handleSelectEvent}
         onEventDrop={handleEventDrop}
         onEventResize={handleEventResize}
-        onSelectSlot={handleSelectSlot}
+        eventPropGetter={eventStyleGetter}
         selectable
         resizable
         components={{
@@ -425,29 +546,187 @@ export default function CalendarView({ events }: CalendarViewProps) {
           event: EventComponent,
         }}
       />
-      {selectedEvent && (
+
+      {showModal && selectedEvent && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg p-6 max-w-lg w-full">
-            <h3 className="text-lg font-semibold mb-2">{selectedEvent.title}</h3>
-            {selectedEvent.description && (
-              <p className="text-gray-600 mb-4">{selectedEvent.description}</p>
-            )}
-            {selectedEvent.url && (
-              <a
-                href={selectedEvent.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-600 hover:underline block mb-4"
+            <div className="flex justify-between items-start mb-4">
+              <h3 className="text-xl font-semibold text-gray-900">{selectedEvent.title}</h3>
+              <button
+                onClick={handleCloseModal}
+                className="text-gray-400 hover:text-gray-500"
               >
-                View Content
-              </a>
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              {/* Date and Time */}
+              <div className="text-sm text-gray-600">
+                {format(selectedEvent.start, 'EEEE, MMMM d, yyyy')} at {format(selectedEvent.start, 'h:mm a')}
+              </div>
+
+              {/* Description Section */}
+              {selectedEvent.description && (
+                <div>
+                  <h4 className="text-sm font-medium text-gray-700 mb-1">Description</h4>
+                  <p className="text-gray-600 text-sm whitespace-pre-wrap">{selectedEvent.description}</p>
+                </div>
+              )}
+
+              {/* Rationale Section */}
+              {selectedEvent.rationale && (
+                <div>
+                  <h4 className="text-sm font-medium text-gray-700 mb-1">Rationale</h4>
+                  <p className="text-gray-600 text-sm whitespace-pre-wrap">{selectedEvent.rationale}</p>
+                </div>
+              )}
+
+              {/* URL Link */}
+              {selectedEvent.url && (
+                <div className="pt-2">
+                  <a
+                    href={selectedEvent.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center text-sm text-teal-600 hover:text-teal-700"
+                  >
+                    <span>View Content</span>
+                    <svg className="ml-1 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                  </a>
+                </div>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200">
+              <button
+                onClick={() => handleDeleteEvent(selectedEvent)}
+                className="inline-flex items-center px-4 py-2 border border-red-300 text-sm font-medium rounded-md text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+              >
+                Delete Event
+              </button>
+              <button
+                onClick={handleCloseModal}
+                className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500"
+              >
+                Close
+              </button>
+            </div>
+
+            {/* Error Message */}
+            {error && (
+              <div className="mt-4 text-sm text-red-600">
+                {error}
+              </div>
             )}
-            <button
-              onClick={handleCloseModal}
-              className="bg-gray-200 hover:bg-gray-300 px-4 py-2 rounded"
-            >
-              Close
-            </button>
+          </div>
+        </div>
+      )}
+
+      {/* New Event Modal */}
+      {showNewEventModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg p-6 max-w-lg w-full">
+            <div className="flex justify-between items-start mb-6">
+              <h3 className="text-xl font-semibold text-gray-900">Add New Content</h3>
+              <button
+                onClick={() => setShowNewEventModal(false)}
+                className="text-gray-400 hover:text-gray-500"
+              >
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <form onSubmit={handleNewEventSubmit} className="space-y-6">
+              <div>
+                <label htmlFor="contentType" className="block text-sm font-medium text-gray-700">
+                  Content Type
+                </label>
+                <select
+                  id="contentType"
+                  required
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 sm:text-sm"
+                  value={newEvent.contentType}
+                  onChange={(e) => setNewEvent({ ...newEvent, contentType: e.target.value })}
+                >
+                  {contentTypes.map(type => (
+                    <option key={type.id} value={type.id}>{type.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="title" className="block text-sm font-medium text-gray-700">
+                  Title
+                </label>
+                <input
+                  type="text"
+                  id="title"
+                  required
+                  placeholder="Enter content title..."
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 sm:text-sm"
+                  value={newEvent.title}
+                  onChange={(e) => setNewEvent({ ...newEvent, title: e.target.value })}
+                />
+              </div>
+
+              <div>
+                <label htmlFor="description" className="block text-sm font-medium text-gray-700">
+                  Description
+                </label>
+                <textarea
+                  id="description"
+                  rows={3}
+                  placeholder="Describe your content..."
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 sm:text-sm"
+                  value={newEvent.description}
+                  onChange={(e) => setNewEvent({ ...newEvent, description: e.target.value })}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <label htmlFor="start-date" className="block text-sm font-medium text-gray-700">
+                    Publish Date & Time
+                  </label>
+                  <input
+                    type="datetime-local"
+                    id="start-date"
+                    required
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 sm:text-sm"
+                    value={format(newEvent.start, "yyyy-MM-dd'T'HH:mm")}
+                    onChange={(e) => {
+                      const start = new Date(e.target.value);
+                      const end = new Date(start.getTime() + 60 * 60 * 1000); // 1 hour later
+                      setNewEvent({ ...newEvent, start, end });
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-6 mt-6 border-t">
+                <button
+                  type="button"
+                  onClick={() => setShowNewEventModal(false)}
+                  className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-teal-600 hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500"
+                >
+                  Add Content
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

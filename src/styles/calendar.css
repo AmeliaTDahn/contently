@@ -100,14 +100,21 @@
   line-height: 1.25rem;
   border-radius: 4px !important;
   border: none !important;
-  background-color: var(--event-color, #6366f1) !important;
+  background-color: white !important;
+  color: var(--event-color) !important;
+  font-weight: 500;
+}
+
+.rbc-event:hover {
+  background-color: var(--event-color) !important;
+  color: white !important;
 }
 
 .rbc-event-content {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-weight: 500;
+  padding: 2px 8px;
 }
 
 .rbc-row-segment {
@@ -228,18 +235,27 @@
 /* Event types */
 .event-instagram {
   --event-color: #E1306C;
+  border-left: 3px solid #E1306C !important;
 }
 
 .event-youtube {
   --event-color: #FF0000;
+  border-left: 3px solid #FF0000 !important;
 }
 
-.event-facebook {
-  --event-color: #4267B2;
+.event-twitter {
+  --event-color: #1DA1F2;
+  border-left: 3px solid #1DA1F2 !important;
 }
 
 .event-blog {
   --event-color: #14b8a6;
+  border-left: 3px solid #14b8a6 !important;
+}
+
+.event-podcast {
+  --event-color: #8B5CF6;
+  border-left: 3px solid #8B5CF6 !important;
 }
 
 /* Calendar toolbar */

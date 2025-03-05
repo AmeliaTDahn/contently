@@ -202,98 +202,6 @@ export const ContentAnalytics: React.FC = () => {
   }>({});
   const [inputUrl, setInputUrl] = useState<string>('');
 
-  // Function to fetch database URLs
-  const fetchDbUrls = async () => {
-    setIsLoadingUrls(true);
-    try {
-      let response;
-      
-      // Check if we have URLs in localStorage first (from ScraperTool)
-      const storedUrls = localStorage.getItem('analysisUrls');
-      if (storedUrls) {
-        try {
-          const parsedUrls = JSON.parse(storedUrls) as SelectedUrl[];
-          setSelectedUrls(parsedUrls);
-          
-          // Clear localStorage after retrieving URLs
-          localStorage.removeItem('analysisUrls');
-          
-          // If we have URLs, start analyzing the first one
-          if (parsedUrls.length > 0 && parsedUrls[0] && parsedUrls[0].url) {
-            setCurrentUrlIndex(0);
-            handleAnalyze(parsedUrls[0].url);
-          }
-          
-          setIsLoadingUrls(false);
-          return;
-        } catch (err) {
-          console.log('[ERROR] Error parsing stored URLs:', err);
-        }
-      }
-      
-      // If no URLs in localStorage or error parsing, fetch from database
-      if (user?.id) {
-        response = await fetch(`/api/user-analyzed-urls?userId=${user.id}`);
-      } else {
-        const localUrls = localStorage.getItem('analyzedUrls');
-        const urlArray = localUrls ? JSON.parse(localUrls) : [];
-        
-        if (urlArray.length === 0) {
-          setIsLoadingUrls(false);
-          return;
-        }
-        
-        response = await fetch('/api/user-analyzed-urls', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ urls: urlArray }),
-        });
-      }
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch analyzed URLs');
-      }
-
-      const data = await response.json();
-      
-      // Convert database URLs to the format expected by the component
-      const formattedUrls = data.urls
-        .filter((item: DbUrlRecord) => item.status === 'completed')
-        .map((item: DbUrlRecord) => ({
-          id: item.id,
-          url: item.url
-        }));
-      
-      setSelectedUrls(formattedUrls);
-      
-      // If we have URLs, start analyzing the first one
-      if (formattedUrls.length > 0) {
-        setCurrentUrlIndex(0);
-        handleAnalyze(formattedUrls[0].url);
-      }
-    } catch (err) {
-      console.error('Error fetching analyzed URLs:', err);
-      setError(err instanceof Error ? err.message : 'Failed to fetch URLs');
-    } finally {
-      setIsLoadingUrls(false);
-    }
-  };
-
-  // Fetch URLs when component mounts
-  useEffect(() => {
-    fetchDbUrls();
-  }, [user]);
-
-  // When currentUrlIndex changes, analyze the next URL
-  useEffect(() => {
-    if (currentUrlIndex >= 0 && currentUrlIndex < selectedUrls.length) {
-      const urlItem = selectedUrls[currentUrlIndex];
-      if (urlItem && urlItem.url) {
-        handleAnalyze(urlItem.url);
-      }
-    }
-  }, [currentUrlIndex]);
-
   const handleAnalyze = async (url: string) => {
     if (!url) return;
     
@@ -355,6 +263,64 @@ export const ContentAnalytics: React.FC = () => {
       setIsAnalyzing(false);
     }
   };
+
+  // Function to fetch database URLs
+  const fetchDbUrls = async () => {
+    setIsLoadingUrls(true);
+    try {
+      let response;
+      
+      if (user?.id) {
+        response = await fetch(`/api/user-analyzed-urls?userId=${user.id}`);
+      } else {
+        setSelectedUrls([]);
+        setIsLoadingUrls(false);
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch analyzed URLs');
+      }
+
+      const data = await response.json();
+      
+      // Convert database URLs to the format expected by the component
+      const formattedUrls = data.urls
+        .filter((item: DbUrlRecord) => item.status === 'completed')
+        .map((item: DbUrlRecord) => ({
+          id: item.id,
+          url: item.url
+        }));
+      
+      setSelectedUrls(formattedUrls);
+      
+      // If we have URLs, start analyzing the first one
+      if (formattedUrls.length > 0) {
+        setCurrentUrlIndex(0);
+        handleAnalyze(formattedUrls[0].url);
+      }
+    } catch (err) {
+      console.error('Error fetching analyzed URLs:', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch URLs');
+    } finally {
+      setIsLoadingUrls(false);
+    }
+  };
+
+  // Fetch URLs when component mounts
+  useEffect(() => {
+    fetchDbUrls();
+  }, [user]);
+
+  // When currentUrlIndex changes, analyze the next URL
+  useEffect(() => {
+    if (currentUrlIndex >= 0 && currentUrlIndex < selectedUrls.length) {
+      const urlItem = selectedUrls[currentUrlIndex];
+      if (urlItem && urlItem.url) {
+        handleAnalyze(urlItem.url);
+      }
+    }
+  }, [currentUrlIndex]);
 
   // Function to switch between analyzed URLs
   const switchToUrl = (url: string) => {

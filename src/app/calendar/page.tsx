@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import CalendarView from '@/components/CalendarView';
 import Navbar from '@/components/Navbar';
 
@@ -15,6 +15,7 @@ interface CalendarEvent {
   start: Date;
   end: Date;
   description?: string;
+  rationale?: string;
   url?: string;
   resource?: string;
   className?: string;
@@ -29,6 +30,7 @@ interface CalendarEntry {
   suggestedDate: string;
   contentType: string;
   topic: string;
+  description: string;
   rationale: string;
 }
 
@@ -78,6 +80,44 @@ export default function CalendarPage() {
   const [error, setError] = useState<string | null>(null);
   const [customPrompt, setCustomPrompt] = useState<string>('');
 
+  // Fetch latest calendar entries when the page loads
+  useEffect(() => {
+    const fetchLatestCalendar = async () => {
+      try {
+        const response = await fetch('/api/get-latest-calendar');
+        if (!response.ok) {
+          throw new Error('Failed to fetch calendar entries');
+        }
+        
+        const data = await response.json();
+        if (data.entries && Array.isArray(data.entries)) {
+          // Convert database entries to calendar events
+          const calendarEvents = data.entries.map((entry: any) => ({
+            id: `${entry.contentType}-${entry.id}`,
+            title: `${entry.contentType} - ${entry.topic}`,
+            start: new Date(entry.suggestedDate),
+            end: new Date(new Date(entry.suggestedDate).setHours(new Date(entry.suggestedDate).getHours() + 1)),
+            description: entry.description,
+            rationale: entry.rationale,
+            resource: entry.contentType,
+            className: `event-${entry.contentType}`,
+            style: {
+              backgroundColor: getEventColor(entry.contentType),
+              border: 'none',
+              borderRadius: '4px',
+            }
+          }));
+          setEvents(calendarEvents);
+        }
+      } catch (err) {
+        console.error('Error fetching calendar entries:', err);
+        setError('Failed to load calendar entries');
+      }
+    };
+
+    fetchLatestCalendar();
+  }, []);
+
   // Calculate total posts from content plan
   const totalPosts = Object.values(contentPlan).reduce((sum, count) => sum + count, 0);
 
@@ -105,6 +145,11 @@ export default function CalendarPage() {
     }
 
     try {
+      // Clear existing calendar first
+      await fetch('/api/clear-calendar', {
+        method: 'POST',
+      });
+      
       const requestBody = {
         userId,
         preferences: {
@@ -151,11 +196,13 @@ export default function CalendarPage() {
           !('suggestedDate' in e) ||
           !('contentType' in e) ||
           !('topic' in e) ||
+          !('description' in e) ||
           !('rationale' in e) ||
           typeof e.suggestedDate !== 'string' ||
           typeof contentType !== 'string' ||
           !contentType ||
           typeof e.topic !== 'string' ||
+          typeof e.description !== 'string' ||
           typeof e.rationale !== 'string'
         ) {
           return false;
@@ -191,7 +238,8 @@ export default function CalendarPage() {
           title: `${entry.contentType} - ${entry.topic}`,
           start: startDate,
           end: endDate,
-          description: entry.rationale,
+          description: entry.description,
+          rationale: entry.rationale,
           resource: entry.contentType,
           className: `event-${entry.contentType}`,
           style: {
@@ -206,12 +254,8 @@ export default function CalendarPage() {
 
       console.log('All calendar events:', calendarEvents);
       
-      // Update the calendar with new events
-      setEvents((prevEvents) => {
-        const newEvents = [...prevEvents, ...calendarEvents];
-        console.log('Updated events state:', newEvents);
-        return newEvents;
-      });
+      // Replace all events with new ones
+      setEvents(calendarEvents);
 
       // Show success message
       const toast = document.createElement('div');
@@ -235,8 +279,23 @@ export default function CalendarPage() {
   };
 
   // Function to clear all events
-  const clearEvents = () => {
-    setEvents([]);
+  const clearEvents = async () => {
+    try {
+      // Clear from database
+      const response = await fetch('/api/clear-calendar', {
+        method: 'POST',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to clear calendar');
+      }
+      
+      // Clear from state
+      setEvents([]);
+    } catch (err) {
+      console.error('Error clearing calendar:', err);
+      setError('Failed to clear calendar');
+    }
   };
 
   // Helper function to ensure contentType is valid

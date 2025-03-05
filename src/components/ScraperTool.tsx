@@ -49,20 +49,9 @@ export const ScraperTool: React.FC = () => {
       if (user?.id) {
         response = await fetch(`/api/user-analyzed-urls?userId=${user.id}`);
       } else {
-        const localUrls = localStorage.getItem('analyzedUrls');
-        const urlArray = localUrls ? JSON.parse(localUrls) : [];
-        
-        if (urlArray.length === 0) {
-          setDbUrls([]);
-          setIsLoading(false);
-          return;
-        }
-        
-        response = await fetch('/api/user-analyzed-urls', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ urls: urlArray }),
-        });
+        setDbUrls([]);
+        setIsLoading(false);
+        return;
       }
 
       if (!response.ok) {
@@ -71,12 +60,6 @@ export const ScraperTool: React.FC = () => {
 
       const data = await response.json();
       setDbUrls(data.urls);
-      
-      // Update local storage for anonymous users
-      if (!user?.id) {
-        const urlsToStore = data.urls.map((item: DbUrlRecord) => item.url);
-        localStorage.setItem('analyzedUrls', JSON.stringify(urlsToStore));
-      }
     } catch (err) {
       console.error('Error fetching analyzed URLs:', err);
     } finally {
@@ -125,16 +108,6 @@ export const ScraperTool: React.FC = () => {
         throw new Error(data.error?.message ?? "Failed to analyze content");
       }
       
-      // Store URL in local storage for anonymous users
-      if (!user?.id) {
-        const localUrls = localStorage.getItem('analyzedUrls');
-        const urlArray = localUrls ? JSON.parse(localUrls) : [];
-        if (!urlArray.includes(url)) {
-          urlArray.push(url);
-          localStorage.setItem('analyzedUrls', JSON.stringify(urlArray));
-        }
-      }
-      
       // Refresh the database URLs list
       await fetchDbUrls();
       
@@ -173,17 +146,6 @@ export const ScraperTool: React.FC = () => {
 
       // Remove from UI
       setDbUrls(prev => prev.filter(item => item.id !== id));
-
-      // If anonymous user, update localStorage
-      if (!user?.id) {
-        const urlToDelete = dbUrls.find(item => item.id === id)?.url;
-        if (urlToDelete) {
-          const localUrls = localStorage.getItem('analyzedUrls');
-          const urlArray = localUrls ? JSON.parse(localUrls) : [];
-          const updatedUrls = urlArray.filter((url: string) => url !== urlToDelete);
-          localStorage.setItem('analyzedUrls', JSON.stringify(updatedUrls));
-        }
-      }
     } catch (err) {
       console.error('Error deleting URL:', err);
       alert(err instanceof Error ? err.message : 'Failed to delete URL');

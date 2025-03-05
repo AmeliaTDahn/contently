@@ -100,19 +100,23 @@ ${customPrompt ? `CUSTOM REQUIREMENTS: ${customPrompt}\n\n` : ''}Here is the ana
 ${contentTypes.map(type => `- ${type}: ${preferences.contentPlan?.[type] || 0} posts`).join('\n')}
 
 CRITICAL REQUIREMENTS:
-1. Generate EXACTLY the number of posts specified for each content type - no more, no less
-2. All posts must be scheduled within the next month (30 days) from tomorrow
-3. ONLY suggest topics that are direct extensions of the analyzed content themes
-4. DO NOT include any generic topics or themes not found in the analyzed URLs
-5. Each suggestion must clearly relate to one of the core topics identified above
-6. Stay strictly within the established content areas - no branching into unrelated subjects
-${customPrompt ? `7. IMPORTANT: ${customPrompt}` : ''}
+1. Generate EXACTLY ${Object.values(preferences.contentPlan || {}).reduce((sum, count) => sum + count, 0)} posts in total - no more, no less
+2. Generate EXACTLY the number of posts specified for each content type:
+${contentTypes.map(type => `   - ${type}: MUST have ${preferences.contentPlan?.[type] || 0} posts`).join('\n')}
+3. All posts must be scheduled within the next month (30 days) from tomorrow
+4. ONLY suggest topics that are direct extensions of the analyzed content themes
+5. DO NOT include any generic topics or themes not found in the analyzed URLs
+6. Each suggestion must clearly relate to one of the core topics identified above
+7. Stay strictly within the established content areas - no branching into unrelated subjects
+8. WARNING: The response will be validated to ensure exact post counts match. Any mismatch will cause an error.
+${customPrompt ? `9. IMPORTANT: ${customPrompt}` : ''}
 
 For each post, provide:
 - Date (YYYY-MM-DD format, must be within the next 30 days)
 - Content Type (must match one of: ${contentTypes.join(', ')})
 - Topic (must be directly related to analyzed content)
-- Rationale (explain specifically which analyzed content this builds upon)
+- Description (provide a comprehensive 3-4 sentence explanation including: main points to cover, target audience takeaways, suggested content structure, and any specific examples or case studies to include)
+- Rationale (write a detailed 3-4 sentence explanation that references: specific analyzed URLs that inspired this content, performance metrics that support this choice, identified content gaps this fills, and how it aligns with audience preferences)
 
 Example format (adjust topics to match your actual analyzed content):
 {
@@ -121,7 +125,8 @@ Example format (adjust topics to match your actual analyzed content):
       "date": "2024-03-05",
       "contentType": "blog",
       "topic": "Advanced Content Optimization Techniques for E-commerce Pages",
-      "rationale": "Builds upon our existing content optimization guide, focusing on the e-commerce aspect mentioned in URL #3..."
+      "description": "A comprehensive guide that walks through advanced optimization strategies for e-commerce product pages and category listings. The content will cover key areas including metadata optimization, schema markup implementation, and content hierarchy best practices with real examples from successful e-commerce sites. Readers will learn how to implement these techniques through step-by-step instructions and receive a downloadable checklist for optimizing their own pages.",
+      "rationale": "This topic builds upon our existing content optimization guide (URL #3) which has shown high engagement (85% read-through rate) but lacked e-commerce-specific examples. Analytics show our e-commerce-related content consistently outperforms other topics with 2.3x higher conversion rates. This fills a significant content gap in our technical SEO coverage and aligns with our audience's demonstrated interest in actionable, industry-specific optimization techniques."
     }
   ]
 }
