@@ -57,10 +57,7 @@ interface CalendarEvent {
   description?: string;
   url?: string;
   rationale?: string;
-<<<<<<< HEAD
   contentType: string;
-=======
->>>>>>> 707e32d60569bb4a0c792aadae39971e57431cc4
 }
 
 interface CalendarViewProps {
@@ -349,22 +346,32 @@ export default function CalendarView({ events }: CalendarViewProps) {
     { id: 'twitter', label: 'Twitter', color: '#1DA1F2' },
     { id: 'blog', label: 'Blog Post', color: '#14b8a6' },
     { id: 'podcast', label: 'Podcast', color: '#8B5CF6' },
-  ];
+  ] as const;
 
-  const [newEvent, setNewEvent] = useState({
+  type ContentType = typeof contentTypes[number]['id'];
+
+  interface NewEventData {
+    title: string;
+    description: string;
+    contentType: ContentType;
+    start: Date;
+    end: Date;
+  }
+
+  const defaultContentType = contentTypes[0].id;
+
+  const [newEvent, setNewEvent] = useState<NewEventData>({
     title: '',
     description: '',
-    contentType: contentTypes[0].id,
+    contentType: defaultContentType,
     start: new Date(),
     end: new Date(),
   });
 
   // Update event style getter to use content type colors
-  const eventStyleGetter = (event: any) => {
-    const typedEvent = event as CalendarEvent;
-    // Extract content type from the event ID (format: contentType-timestamp)
-    const contentType = typedEvent.id.split('-')[0];
-    const typeConfig = contentTypes.find(type => type.id === contentType);
+  const eventStyleGetter = (event: object) => {
+    const calendarEvent = event as CalendarEvent;
+    const typeConfig = contentTypes.find(type => type.id === calendarEvent.contentType);
     
     return {
       style: {
@@ -377,9 +384,9 @@ export default function CalendarView({ events }: CalendarViewProps) {
         fontWeight: 500,
         fontSize: '0.85rem',
         cursor: 'pointer',
-        padding: '4px 8px',
+        padding: '2px 4px',
       },
-      className: `event-${contentType}`,
+      className: `event-${calendarEvent.contentType}`,
     };
   };
 
@@ -388,8 +395,11 @@ export default function CalendarView({ events }: CalendarViewProps) {
     
     const event: CalendarEvent = {
       id: `${newEvent.contentType}-${Date.now()}`,
-      ...newEvent,
-      title: `${newEvent.contentType} - ${newEvent.title}`,
+      title: newEvent.title,
+      start: newEvent.start,
+      end: newEvent.end,
+      description: newEvent.description,
+      contentType: newEvent.contentType
     };
     
     setCalendarEvents(prev => [...prev, event]);
@@ -397,7 +407,7 @@ export default function CalendarView({ events }: CalendarViewProps) {
     setNewEvent({
       title: '',
       description: '',
-      contentType: contentTypes[0].id,
+      contentType: defaultContentType,
       start: new Date(),
       end: new Date(),
     });
@@ -405,7 +415,7 @@ export default function CalendarView({ events }: CalendarViewProps) {
     // Show success toast
     const toast = document.createElement('div');
     toast.className = 'event-update-toast';
-    toast.textContent = 'Event added successfully';
+    toast.textContent = 'Content added successfully';
     document.body.appendChild(toast);
     setTimeout(() => {
       toast.classList.add('fade-out');
@@ -416,21 +426,19 @@ export default function CalendarView({ events }: CalendarViewProps) {
   };
 
   // Custom event component to show URL source
-  const EventComponent = ({ event }: any) => {
-    const typedEvent = event as CalendarEvent;
-    const contentType = typedEvent.id.split('-')[0];
-    const typeConfig = contentTypes.find(type => type.id === contentType);
+  const EventComponent = (props: { event: object }) => {
+    const event = props.event as CalendarEvent;
+    const typeConfig = contentTypes.find(type => type.id === event.contentType);
     
     return (
       <div 
-        title={typedEvent.description || typedEvent.title}
-        className="flex items-center space-x-1"
+        title={event.description || event.title}
+        className="px-1 py-0.5"
       >
-        <div 
-          className="w-2 h-2 rounded-full flex-shrink-0" 
-          style={{ backgroundColor: typeConfig?.color || '#3b82f6' }}
-        />
-        <div className="event-title truncate">{typedEvent.title}</div>
+        <div className="event-title flex items-center">
+          <span className="w-2 h-2 rounded-full mr-1.5" style={{ backgroundColor: typeConfig?.color || '#3b82f6' }} />
+          {event.title}
+        </div>
       </div>
     );
   };
@@ -453,10 +461,13 @@ export default function CalendarView({ events }: CalendarViewProps) {
   // Add delete event handler
   const handleDeleteEvent = async (event: CalendarEvent) => {
     try {
-      // Since event is of type CalendarEvent, id is guaranteed to be a string
       const idParts = event.id.split('-');
-      const entryId = parseInt(idParts[idParts.length - 1]);
+      const lastPart = idParts[idParts.length - 1];
+      if (!lastPart) {
+        throw new Error('Invalid event ID format');
+      }
       
+      const entryId = parseInt(lastPart);
       if (isNaN(entryId)) {
         throw new Error('Invalid event ID format');
       }
@@ -474,12 +485,7 @@ export default function CalendarView({ events }: CalendarViewProps) {
       }
 
       // Update local state to remove the deleted event
-      setCalendarEvents((currentEvents: CalendarEvent[]) => {
-        return currentEvents.filter((e: CalendarEvent) => {
-          // Both e.id and event.id are guaranteed to be strings
-          return e.id !== event.id;
-        });
-      });
+      setCalendarEvents(currentEvents => currentEvents.filter(e => e.id !== event.id));
       setSelectedEvent(null);
       setShowModal(false);
 
@@ -575,11 +581,7 @@ export default function CalendarView({ events }: CalendarViewProps) {
               {selectedEvent.description && (
                 <div>
                   <h4 className="text-sm font-medium text-gray-700 mb-1">Description</h4>
-<<<<<<< HEAD
                   <p className="text-gray-600 text-sm whitespace-pre-wrap">{selectedEvent.description}</p>
-=======
-                  <p className="text-gray-600 text-sm">{selectedEvent.description}</p>
->>>>>>> 707e32d60569bb4a0c792aadae39971e57431cc4
                 </div>
               )}
 
@@ -587,11 +589,7 @@ export default function CalendarView({ events }: CalendarViewProps) {
               {selectedEvent.rationale && (
                 <div>
                   <h4 className="text-sm font-medium text-gray-700 mb-1">Rationale</h4>
-<<<<<<< HEAD
                   <p className="text-gray-600 text-sm whitespace-pre-wrap">{selectedEvent.rationale}</p>
-=======
-                  <p className="text-gray-600 text-sm">{selectedEvent.rationale}</p>
->>>>>>> 707e32d60569bb4a0c792aadae39971e57431cc4
                 </div>
               )}
 
@@ -612,7 +610,6 @@ export default function CalendarView({ events }: CalendarViewProps) {
                 </div>
               )}
             </div>
-<<<<<<< HEAD
 
             {/* Action Buttons */}
             <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200">
@@ -666,7 +663,7 @@ export default function CalendarView({ events }: CalendarViewProps) {
                   required
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 sm:text-sm"
                   value={newEvent.contentType}
-                  onChange={(e) => setNewEvent({ ...newEvent, contentType: e.target.value })}
+                  onChange={(e) => setNewEvent({ ...newEvent, contentType: e.target.value as ContentType })}
                 >
                   {contentTypes.map(type => (
                     <option key={type.id} value={type.id}>{type.label}</option>
@@ -739,8 +736,6 @@ export default function CalendarView({ events }: CalendarViewProps) {
                 </button>
               </div>
             </form>
-=======
->>>>>>> 707e32d60569bb4a0c792aadae39971e57431cc4
           </div>
         </div>
       )}
