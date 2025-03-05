@@ -1,6 +1,3 @@
-// Example model schema from the Drizzle docs
-// https://orm.drizzle.team/docs/sql-schema-declaration
-
 import { sql } from "drizzle-orm";
 import {
   index,
@@ -260,5 +257,53 @@ export const contentAnalytics = createTable(
   },
   (table) => ({
     analyzedUrlIdIndex: index("analytics_analyzed_url_id_idx").on(table.analyzedUrlId),
+  })
+);
+
+// Table for storing content calendars
+export const contentCalendars = createTable(
+  "content_calendar",
+  {
+    id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
+    userId: varchar("user_id", { length: 256 }).notNull(),
+    preferences: json("preferences").$type<{
+      postsPerMonth: number;
+      contentTypes: string[];
+    }>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .$onUpdate(() => new Date()),
+  },
+  (table) => ({
+    userIdIndex: index("content_calendar_user_id_idx").on(table.userId),
+  })
+);
+
+// Table for storing calendar entries
+export const calendarEntries = createTable(
+  "calendar_entry",
+  {
+    id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
+    contentCalendarId: integer("content_calendar_id")
+      .notNull()
+      .references(() => contentCalendars.id, { onDelete: "cascade" }),
+    suggestedDate: timestamp("suggested_date", { withTimezone: true }).notNull(),
+    contentType: varchar("content_type", { length: 100 }).notNull(),
+    topic: varchar("topic", { length: 256 }),
+    rationale: text("rationale").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => ({
+    contentCalendarIdIndex: index("calendar_entry_content_calendar_id_idx").on(
+      table.contentCalendarId
+    ),
+    suggestedDateIndex: index("calendar_entry_suggested_date_idx").on(
+      table.suggestedDate
+    ),
   })
 );
