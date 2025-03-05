@@ -57,7 +57,10 @@ interface CalendarEvent {
   description?: string;
   url?: string;
   rationale?: string;
+<<<<<<< HEAD
   contentType: string;
+=======
+>>>>>>> 707e32d60569bb4a0c792aadae39971e57431cc4
 }
 
 interface CalendarViewProps {
@@ -572,7 +575,11 @@ export default function CalendarView({ events }: CalendarViewProps) {
               {selectedEvent.description && (
                 <div>
                   <h4 className="text-sm font-medium text-gray-700 mb-1">Description</h4>
+<<<<<<< HEAD
                   <p className="text-gray-600 text-sm whitespace-pre-wrap">{selectedEvent.description}</p>
+=======
+                  <p className="text-gray-600 text-sm">{selectedEvent.description}</p>
+>>>>>>> 707e32d60569bb4a0c792aadae39971e57431cc4
                 </div>
               )}
 
@@ -580,7 +587,11 @@ export default function CalendarView({ events }: CalendarViewProps) {
               {selectedEvent.rationale && (
                 <div>
                   <h4 className="text-sm font-medium text-gray-700 mb-1">Rationale</h4>
+<<<<<<< HEAD
                   <p className="text-gray-600 text-sm whitespace-pre-wrap">{selectedEvent.rationale}</p>
+=======
+                  <p className="text-gray-600 text-sm">{selectedEvent.rationale}</p>
+>>>>>>> 707e32d60569bb4a0c792aadae39971e57431cc4
                 </div>
               )}
 
@@ -601,6 +612,7 @@ export default function CalendarView({ events }: CalendarViewProps) {
                 </div>
               )}
             </div>
+<<<<<<< HEAD
 
             {/* Action Buttons */}
             <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200">
@@ -727,6 +739,8 @@ export default function CalendarView({ events }: CalendarViewProps) {
                 </button>
               </div>
             </form>
+=======
+>>>>>>> 707e32d60569bb4a0c792aadae39971e57431cc4
           </div>
         </div>
       )}

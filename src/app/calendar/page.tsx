@@ -19,6 +19,7 @@ interface CalendarEvent {
   url?: string;
   resource?: string;
   className?: string;
+  rationale?: string;
   style?: {
     backgroundColor?: string;
     border?: string;
