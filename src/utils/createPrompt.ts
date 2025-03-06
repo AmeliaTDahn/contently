@@ -66,16 +66,30 @@ ${customPrompt ? `CUSTOM REQUIREMENTS: ${customPrompt}\n\n` : ''}Here is the ana
     }
   
     // Add core topic areas
-    prompt += `\nCore Topic Areas (ONLY suggest content within these areas):\n`;
-    prompt += `- Primary themes: ${topTopics.join(', ')}\n`;
-    prompt += `- Established subtopics: ${globalInsights.audiencePreferences.interests.join(', ')}\n`;
-    prompt += `- Current content gaps within these themes: ${globalInsights.contentGaps.join(', ')}\n`;
+    prompt += `\nStrategic Content Planning:\n`;
+    prompt += `- Primary Content Pillars: ${topTopics.join(', ')}\n`;
+    prompt += `- Audience Journey Topics: ${globalInsights.audiencePreferences.interests.join(', ')}\n`;
+    prompt += `\nContent Gap Strategy:\n`;
+    prompt += `- Immediate Opportunities: ${globalInsights.contentGaps.join(', ')}\n`;
+    prompt += `- Audience Journey Stages to Target:\n`;
+    prompt += `  • Awareness: Focus on educational content and thought leadership\n`;
+    prompt += `  • Consideration: Develop comparison and analysis content\n`;
+    prompt += `  • Decision: Create case studies and implementation guides\n`;
+    prompt += `- Content Depth Analysis:\n`;
+    prompt += `  • Identify topics needing more comprehensive coverage\n`;
+    prompt += `  • Plan content clusters around core themes\n`;
+    prompt += `  • Map internal linking opportunities\n`;
   
     // Add keyword insights specific to existing content
-    prompt += `\nKeywords from Analyzed Content:\n`;
-    prompt += `- Currently successful: ${keywordAnalysis.trending.join(', ')}\n`;
-    prompt += `- Underexplored aspects: ${keywordAnalysis.underutilized.join(', ')}\n`;
-    prompt += `- Well-covered areas: ${keywordAnalysis.overused.join(', ')}\n`;
+    prompt += `\nKeywords and SEO Strategy:\n`;
+    prompt += `- High-performing keywords: ${keywordAnalysis.trending.join(', ')}\n`;
+    prompt += `- Opportunity keywords: ${keywordAnalysis.underutilized.join(', ')}\n`;
+    prompt += `- Saturated keywords: ${keywordAnalysis.overused.join(', ')}\n`;
+    prompt += `\nSearch Intent Optimization:\n`;
+    prompt += `- Focus on search intent mapping for each topic\n`;
+    prompt += `- Prioritize long-tail keyword variations\n`;
+    prompt += `- Include semantic keyword clusters\n`;
+    prompt += `- Optimize for featured snippet opportunities\n`;
   
     // Add seasonal patterns specific to content themes
     prompt += `\nSeasonal Patterns in Current Content:\n`;
@@ -84,17 +98,26 @@ ${customPrompt ? `CUSTOM REQUIREMENTS: ${customPrompt}\n\n` : ''}Here is the ana
     }
   
     // Add engagement data
-    prompt += `\nPublishing Schedule (based on current content):\n`;
-    prompt += `- Most engaging times: ${Object.entries(engagementPatterns.timeOfDay)
+    prompt += `\nEngagement Optimization Strategy:\n`;
+    prompt += `- Peak Engagement Windows: ${Object.entries(engagementPatterns.timeOfDay)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3)
-      .map(([time]) => time)
+      .map(([time, score]) => `${time} (${score.toFixed(2)}x engagement)`)
       .join(', ')}\n`;
-    prompt += `- Best performing days: ${Object.entries(engagementPatterns.dayOfWeek)
+    prompt += `- Optimal Publishing Days: ${Object.entries(engagementPatterns.dayOfWeek)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3)
-      .map(([day]) => day)
+      .map(([day, score]) => `${day} (${score.toFixed(2)}x engagement)`)
       .join(', ')}\n`;
+    prompt += `- Content Length Sweet Spots: ${Object.entries(engagementPatterns.contentLength)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 2)
+      .map(([length, score]) => `${length} words (${score.toFixed(2)}x engagement)`)
+      .join(', ')}\n`;
+    prompt += `\nPlatform-Specific Optimization:\n`;
+    prompt += `- Optimize headline variations for different platforms\n`;
+    prompt += `- Include platform-specific engagement hooks\n`;
+    prompt += `- Adapt content format for cross-platform distribution\n`;
   
     prompt += `\nCreate a content calendar for the next month with EXACTLY the following distribution:
 ${contentTypes.map(type => `- ${type}: ${preferences.contentPlan?.[type] || 0} posts`).join('\n')}
@@ -117,6 +140,7 @@ For each post, provide:
 - Topic (must be directly related to analyzed content)
 - Description (provide a comprehensive 3-4 sentence explanation including: main points to cover, target audience takeaways, suggested content structure, and any specific examples or case studies to include)
 - Rationale (write a detailed 3-4 sentence explanation that references: specific analyzed URLs that inspired this content, performance metrics that support this choice, identified content gaps this fills, and how it aligns with audience preferences)
+- Visual Strategy (provide 3-4 specific suggestions for visuals including: recommended type of images/graphics, key data points to visualize, suggested infographic elements, and any interactive components. Be specific about the style and content of each visual)
 
 Example format (adjust topics to match your actual analyzed content):
 {
@@ -126,7 +150,16 @@ Example format (adjust topics to match your actual analyzed content):
       "contentType": "blog",
       "topic": "Advanced Content Optimization Techniques for E-commerce Pages",
       "description": "A comprehensive guide that walks through advanced optimization strategies for e-commerce product pages and category listings. The content will cover key areas including metadata optimization, schema markup implementation, and content hierarchy best practices with real examples from successful e-commerce sites. Readers will learn how to implement these techniques through step-by-step instructions and receive a downloadable checklist for optimizing their own pages.",
-      "rationale": "This topic builds upon our existing content optimization guide (URL #3) which has shown high engagement (85% read-through rate) but lacked e-commerce-specific examples. Analytics show our e-commerce-related content consistently outperforms other topics with 2.3x higher conversion rates. This fills a significant content gap in our technical SEO coverage and aligns with our audience's demonstrated interest in actionable, industry-specific optimization techniques."
+      "rationale": "This topic builds upon our existing content optimization guide (URL #3) which has shown high engagement (85% read-through rate) but lacked e-commerce-specific examples. Analytics show our e-commerce-related content consistently outperforms other topics with 2.3x higher conversion rates. This fills a significant content gap in our technical SEO coverage and aligns with our audience's demonstrated interest in actionable, industry-specific optimization techniques.",
+      "visualStrategy": {
+        "mainImage": "Hero image showing before/after comparison of an optimized e-commerce product page with key optimization elements highlighted",
+        "infographics": [
+          "Flow diagram showing the step-by-step optimization process with icons for each major step",
+          "Interactive comparison tool showing good vs. poor examples of product page optimization",
+          "Data visualization showing impact of optimization on key metrics (conversion rate, time on page, bounce rate)"
+        ],
+        "style": "Clean, modern design with branded color scheme. Use minimal, flat design for diagrams and charts. Include annotated screenshots for real-world examples."
+      }
     }
   ]
 }

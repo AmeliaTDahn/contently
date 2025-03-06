@@ -297,6 +297,11 @@ export const calendarEntries = createTable(
     topic: varchar("topic", { length: 256 }),
     description: text("description").notNull(),
     rationale: text("rationale").notNull(),
+    visualStrategy: json("visual_strategy").$type<{
+      mainImage: string;
+      infographics: string[];
+      style: string;
+    }>(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),

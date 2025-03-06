@@ -93,12 +93,13 @@ export default function CalendarPage() {
         if (data.entries && Array.isArray(data.entries)) {
           // Convert database entries to calendar events
           const calendarEvents = data.entries.map((entry: any) => ({
-            id: `${entry.contentType}-${entry.id}`,
+            id: entry.id.toString(),
             title: `${entry.contentType} - ${entry.topic}`,
             start: new Date(entry.suggestedDate),
             end: new Date(new Date(entry.suggestedDate).setHours(new Date(entry.suggestedDate).getHours() + 1)),
             description: entry.description,
             rationale: entry.rationale,
+            contentType: entry.contentType,
             resource: entry.contentType,
             className: `event-${entry.contentType}`,
             style: {
@@ -234,7 +235,7 @@ export default function CalendarPage() {
 
         // Since we've validated the entry with isValidCalendarEntry, we know contentType is a string
         const event: CalendarEvent = {
-          id: `${entry.contentType}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          id: entry.id.toString(),
           title: `${entry.contentType} - ${entry.topic}`,
           start: startDate,
           end: endDate,
