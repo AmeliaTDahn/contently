@@ -1,5 +1,6 @@
 import type { ScrapedContent, ScraperResult, ScraperError } from '.';
-import puppeteer from 'puppeteer';
+import chromium from 'chrome-aws-lambda';
+import puppeteer, { HTTPResponse } from 'puppeteer-core';
 
 /**
  * Helper function to convert relative URLs to absolute URLs
@@ -65,21 +66,50 @@ interface ScrapingResult {
 export async function scrapePuppeteer(url: string): Promise<ScraperResult> {
   let browser;
   try {
-    // Use minimal browser configuration
+    // Use chrome-aws-lambda for better serverless compatibility
     browser = await puppeteer.launch({
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath: await chromium.executablePath,
       headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage'
-      ]
     });
 
     const page = await browser.newPage();
     await page.setDefaultNavigationTimeout(60000);
 
-    // Navigate to the page
-    await page.goto(url, { waitUntil: 'networkidle0' });
+    // Set user agent to avoid blocking
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+
+    // Navigate to the page with retry logic
+    let response: HTTPResponse | null = null;
+    let lastError = '';
+    
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const result = await page.goto(url, { 
+          waitUntil: 'networkidle0',
+          timeout: 30000
+        });
+        
+        if (result && result.ok()) {
+          response = result;
+          break;
+        } else if (result) {
+          lastError = `Status: ${result.status()}`;
+        }
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : 'Unknown error';
+        if (attempt === 2) throw error;
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+    }
+
+    if (!response || !response.ok()) {
+      throw new Error(`Failed to load page: ${lastError}`);
+    }
+
+    // Wait for content to load
+    await page.waitForSelector('body', { timeout: 10000 });
 
     // Extract content using a simpler approach
     const content = await page.evaluate(() => {
@@ -93,7 +123,7 @@ export async function scrapePuppeteer(url: string): Promise<ScraperResult> {
 
       const getMainContent = () => {
         // Try to get content from common selectors
-        const selectors = ['article', 'main', '.content', '.article', '.post'];
+        const selectors = ['article', 'main', '.content', '.article', '.post', '[role="main"]'];
         for (const selector of selectors) {
           const element = document.querySelector(selector);
           if (element?.textContent) {
@@ -103,40 +133,70 @@ export async function scrapePuppeteer(url: string): Promise<ScraperResult> {
 
         // Fallback to getting the largest text block
         const textBlocks = Array.from(document.querySelectorAll('p, div, section'))
-          .map(el => el.textContent || '')
-          .filter(text => text.length > 100)
+          .map(el => ({
+            text: el.textContent?.trim() || '',
+            length: el.textContent?.length || 0
+          }))
+          .filter(({ text, length }) => length > 100 && !/^\s*$/.test(text))
           .sort((a, b) => b.length - a.length);
 
-        return textBlocks[0] || document.body?.textContent?.trim() || '';
+        if (textBlocks.length > 0) {
+          return textBlocks[0].text;
+        }
+
+        // Final fallback
+        return document.body?.textContent?.trim() || '';
       };
 
       const getHeadings = () => ({
-        h1Tags: Array.from(document.querySelectorAll('h1')).map(h => h.textContent || ''),
-        headings: Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6')).map(h => h.textContent || '')
+        h1Tags: Array.from(document.querySelectorAll('h1'))
+          .map(h => h.textContent?.trim() || '')
+          .filter(text => text.length > 0),
+        headings: Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6'))
+          .map(h => h.textContent?.trim() || '')
+          .filter(text => text.length > 0)
       });
 
-      const getLinks = () => Array.from(document.querySelectorAll('a')).map(a => ({
-        text: a.textContent || '',
-        href: a.href || '',
-        originalHref: a.getAttribute('href') || ''
-      }));
+      const getLinks = () => Array.from(document.querySelectorAll('a'))
+        .map(a => ({
+          text: a.textContent?.trim() || '',
+          href: a.href || '',
+          originalHref: a.getAttribute('href') || ''
+        }))
+        .filter(link => link.text.length > 0 || link.href.length > 0);
 
-      const getImages = () => Array.from(document.querySelectorAll('img')).map(img => ({
-        src: img.src || '',
-        alt: img.alt || ''
-      }));
+      const getImages = () => Array.from(document.querySelectorAll('img'))
+        .map(img => ({
+          src: img.src || '',
+          alt: img.alt || ''
+        }))
+        .filter(img => img.src.length > 0);
 
-      const getTables = () => Array.from(document.querySelectorAll('table')).map(table => ({
-        headers: Array.from(table.querySelectorAll('th')).map(th => th.textContent || ''),
-        rows: Array.from(table.querySelectorAll('tr')).map(tr => 
-          Array.from(tr.querySelectorAll('td')).map(td => td.textContent || '')
-        )
-      }));
+      const getTables = () => Array.from(document.querySelectorAll('table'))
+        .map(table => ({
+          headers: Array.from(table.querySelectorAll('th'))
+            .map(th => th.textContent?.trim() || '')
+            .filter(text => text.length > 0),
+          rows: Array.from(table.querySelectorAll('tr'))
+            .map(tr => Array.from(tr.querySelectorAll('td'))
+              .map(td => td.textContent?.trim() || '')
+              .filter(text => text.length > 0)
+            )
+            .filter(row => row.length > 0)
+        }))
+        .filter(table => table.headers.length > 0 || table.rows.length > 0);
 
       const getStructuredData = () => {
         try {
           return Array.from(document.querySelectorAll('script[type="application/ld+json"]'))
-            .map(script => JSON.parse(script.textContent || '{}'));
+            .map(script => {
+              try {
+                return JSON.parse(script.textContent || '{}');
+              } catch {
+                return {};
+              }
+            })
+            .filter(data => Object.keys(data).length > 0);
         } catch {
           return [];
         }
@@ -153,11 +213,14 @@ export async function scrapePuppeteer(url: string): Promise<ScraperResult> {
       };
     });
 
+    // Validate content
     if (!content.mainContent || content.mainContent.length < 100) {
       throw new Error('Failed to extract meaningful content from the page');
     }
 
-    return { content: content as ScrapedContent };
+    // Clean up any potential circular references
+    const cleanContent = JSON.parse(JSON.stringify(content));
+    return { content: cleanContent as ScrapedContent };
 
   } catch (error) {
     console.error('Error in Puppeteer scraper:', error);
