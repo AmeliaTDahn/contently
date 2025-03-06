@@ -1,7 +1,7 @@
 import { type NextRequest } from 'next/server';
 import { db } from '@/server/db';
 import { calendarEvents } from '@/server/db/schema';
-import { eq, and, gte, lte } from 'drizzle-orm';
+import { eq, and, gte, lte, type SQL } from 'drizzle-orm';
 
 export async function POST(request: NextRequest) {
   try {
@@ -84,18 +84,21 @@ export async function GET(request: NextRequest) {
 
     // Add date range filter if provided
     if (startDate && endDate) {
-      query = query.where(
-        and(
-          gte(calendarEvents.startDate, new Date(startDate)),
-          lte(calendarEvents.endDate, new Date(endDate))
-        )
-      );
+      const dateFilter = and(
+        gte(calendarEvents.startDate, new Date(startDate)),
+        lte(calendarEvents.endDate, new Date(endDate))
+      ) as SQL<unknown>;
+
+      query = db
+        .select()
+        .from(calendarEvents)
+        .where(and(eq(calendarEvents.userId, userId), dateFilter));
     }
 
     const events = await query;
 
     // Transform events to match the calendar component's expected format
-    const transformedEvents = events.map(event => ({
+    const transformedEvents = events.map((event: typeof calendarEvents.$inferSelect) => ({
       id: event.id.toString(),
       title: event.title,
       description: event.description,
