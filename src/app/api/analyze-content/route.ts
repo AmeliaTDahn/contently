@@ -7,6 +7,10 @@ import { db } from '@/server/db';
 import { analyzedUrls, contentAnalytics } from '@/server/db/schema';
 import { eq } from 'drizzle-orm';
 import { analyzeContentWithAI, predictEngagementMetrics } from '@/utils/openai';
+import { config, apiConfig } from '../config';
+
+// Export the config for edge runtime
+export { config };
 
 interface RequestBody {
   url: string;
@@ -283,6 +287,37 @@ function getWordCountStats(content: string, existingStats?: WordCountStats): Wor
 // Set timeout for the entire analysis process
 const ANALYSIS_TIMEOUT = 120000; // 120 seconds
 
+// Helper function to implement timeout
+const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
+  const timeout = new Promise<never>((_, reject) => {
+    setTimeout(() => reject(new Error('Operation timed out')), timeoutMs);
+  });
+
+  return Promise.race([promise, timeout]);
+};
+
+// Helper function to implement retries
+const withRetry = async <T>(
+  operation: () => Promise<T>,
+  maxRetries: number = apiConfig.maxRetries,
+  delay: number = apiConfig.retryDelay
+): Promise<T> => {
+  let lastError: Error | undefined;
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error as Error;
+      if (attempt < maxRetries - 1) {
+        await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, attempt)));
+      }
+    }
+  }
+
+  throw lastError || new Error('Operation failed after retries');
+};
+
 export async function POST(request: NextRequest): Promise<Response> {
   let urlRecord: typeof analyzedUrls.$inferSelect | undefined;
 
@@ -297,22 +332,28 @@ export async function POST(request: NextRequest): Promise<Response> {
     }
 
     // Check if URL has already been analyzed
-    const existingUrl = await db
-      .select()
-      .from(analyzedUrls)
-      .where(eq(analyzedUrls.url, body.url))
-      .limit(1);
+    const existingUrl = await withTimeout(
+      db
+        .select()
+        .from(analyzedUrls)
+        .where(eq(analyzedUrls.url, body.url))
+        .limit(1),
+      apiConfig.maxTimeout
+    );
 
     if (existingUrl.length > 0) {
       urlRecord = existingUrl[0];
       
       if (urlRecord?.status === 'completed') {
         // Fetch existing analytics
-        const analytics = await db
-          .select()
-          .from(contentAnalytics)
-          .where(eq(contentAnalytics.analyzedUrlId, urlRecord.id))
-          .limit(1);
+        const analytics = await withTimeout(
+          db
+            .select()
+            .from(contentAnalytics)
+            .where(eq(contentAnalytics.analyzedUrlId, urlRecord.id))
+            .limit(1),
+          apiConfig.maxTimeout
+        );
 
         if (analytics.length > 0) {
           return new Response(
@@ -324,13 +365,16 @@ export async function POST(request: NextRequest): Promise<Response> {
     }
 
     // Create new URL record
-    urlRecord = (await db
-      .insert(analyzedUrls)
-      .values({
-        url: body.url,
-        status: 'processing'
-      })
-      .returning())[0];
+    urlRecord = (await withTimeout(
+      db
+        .insert(analyzedUrls)
+        .values({
+          url: body.url,
+          status: 'processing'
+        })
+        .returning(),
+      apiConfig.maxTimeout
+    ))[0];
 
     if (!urlRecord) {
       return new Response(
@@ -342,34 +386,50 @@ export async function POST(request: NextRequest): Promise<Response> {
     const recordId = urlRecord.id;
 
     try {
-      // Scrape the content
-      const scrapedData = await scrapePuppeteer(body.url);
+      // Scrape the content with retries
+      const scrapedData = await withRetry(
+        () => withTimeout(scrapePuppeteer(body.url), apiConfig.maxTimeout)
+      );
       
       if (!scrapedData.content || scrapedData.error) {
         throw new Error(scrapedData.error?.message || 'Failed to scrape content');
       }
 
+      const { content } = scrapedData;
+
       // Analyze content with various tools
-      const contentAnalysis = await analyzeContent(scrapedData.content.mainContent, scrapedData.content.metadata.title || '');
-      const keywordAnalysis = analyzeKeywordUsage(scrapedData.content.mainContent, []);
-      const topicCoherence = analyzeTopicCoherence(scrapedData.content.mainContent, scrapedData.content.metadata.title || '');
-      const mainTopics = extractMainTopics(scrapedData.content.mainContent);
+      const [contentAnalysis, keywordAnalysis, topicCoherence, mainTopics] = await Promise.all([
+        withTimeout(analyzeContent(content.mainContent, content.metadata.title || ''), apiConfig.maxTimeout),
+        Promise.resolve(analyzeKeywordUsage(content.mainContent, [])),
+        Promise.resolve(analyzeTopicCoherence(content.mainContent, content.metadata.title || '')),
+        Promise.resolve(extractMainTopics(content.mainContent))
+      ]);
 
-      // Get AI-powered analysis
-      const aiAnalysis = await analyzeContentWithAI({
-        content: scrapedData.content.mainContent,
-        title: scrapedData.content.metadata.title || '',
-        metadata: {
-          description: scrapedData.content.metadata.description,
-          keywords: scrapedData.content.metadata.keywords,
-          author: scrapedData.content.metadata.author
-        }
-      });
+      // Get AI-powered analysis with retries
+      const aiAnalysis = await withRetry(
+        () => withTimeout(
+          analyzeContentWithAI({
+            content: content.mainContent,
+            title: content.metadata.title || '',
+            metadata: {
+              description: content.metadata.description,
+              keywords: content.metadata.keywords,
+              author: content.metadata.author
+            }
+          }),
+          apiConfig.maxTimeout
+        )
+      );
 
-      // Predict engagement metrics
-      const engagementMetrics = await predictEngagementMetrics(
-        scrapedData.content.mainContent,
-        aiAnalysis
+      // Predict engagement metrics with retries
+      const engagementMetrics = await withRetry(
+        () => withTimeout(
+          predictEngagementMetrics(
+            content.mainContent,
+            aiAnalysis
+          ),
+          apiConfig.maxTimeout
+        )
       );
 
       // Combine all analysis results
@@ -412,34 +472,43 @@ export async function POST(request: NextRequest): Promise<Response> {
         topicCoherence
       };
 
-      // Save analysis results
-      const [savedAnalytics] = await db
-        .insert(contentAnalytics)
-        .values(analysisResult)
-        .returning();
+      // Save analysis results with timeout
+      const [savedAnalytics] = await withTimeout(
+        db
+          .insert(contentAnalytics)
+          .values(analysisResult)
+          .returning(),
+        apiConfig.maxTimeout
+      );
 
-      // Update URL status
-      await db
-        .update(analyzedUrls)
-        .set({
-          status: 'completed',
-          completedAt: new Date()
-        })
-        .where(eq(analyzedUrls.id, recordId));
+      // Update URL status with timeout
+      await withTimeout(
+        db
+          .update(analyzedUrls)
+          .set({
+            status: 'completed',
+            completedAt: new Date()
+          })
+          .where(eq(analyzedUrls.id, recordId)),
+        apiConfig.maxTimeout
+      );
 
       return new Response(
         JSON.stringify(savedAnalytics),
         { status: 200 }
       );
     } catch (error) {
-      // Update URL status to failed
-      await db
-        .update(analyzedUrls)
-        .set({
-          status: 'failed',
-          errorMessage: error instanceof Error ? error.message : 'Unknown error'
-        })
-        .where(eq(analyzedUrls.id, recordId));
+      // Update URL status to failed with timeout
+      await withTimeout(
+        db
+          .update(analyzedUrls)
+          .set({
+            status: 'failed',
+            errorMessage: error instanceof Error ? error.message : 'Unknown error'
+          })
+          .where(eq(analyzedUrls.id, recordId)),
+        apiConfig.maxTimeout
+      );
 
       throw error;
     }

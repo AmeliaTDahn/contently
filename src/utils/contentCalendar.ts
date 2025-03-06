@@ -80,7 +80,7 @@ export function generateContentCalendar(
     }
 
     calendar.push({
-      date: currentDate.toISODate(),
+      date: currentDate.toISODate() ?? currentDate.toFormat('yyyy-MM-dd'),
       title: recommendation.title,
       content_type: recommendation.content_type,
       action: recommendation.action,

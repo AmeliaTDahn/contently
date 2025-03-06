@@ -73,6 +73,22 @@ export const sampleAnalytics: ExtendedAnalytics = {
       distribution: "Well-balanced keyword distribution across the content",
       overused: ["content strategy"],
       underused: ["marketing ROI", "content metrics"]
+    },
+    engagement: {
+      likes: 245,
+      comments: 32,
+      shares: 128,
+      bookmarks: 56,
+      totalViews: 3500,
+      uniqueViews: 2800,
+      avgTimeOnPage: 4.5,
+      bounceRate: 0.25,
+      socialShares: {
+        facebook: 85,
+        twitter: 120,
+        linkedin: 95,
+        pinterest: 15
+      }
     }
   },
   stats: {
@@ -99,20 +115,29 @@ export const sampleAnalytics: ExtendedAnalytics = {
     ]
   },
   articles: {
-    total: 1,
+    total: 11,
     articles: [
       {
-        id: "2247569",
-        wordCount: 49,
-        keywords: [
-          "J.R.R. Tolkien",
-          "All that glitters is not gold"
-        ],
-        createdAt: "2024-01-07T06:04:57.477-05:00",
-        title: "Not all those who wander are lost - J.R.R. Tolkien",
-        url: "https://contently.com/danette"
+        id: "1",
+        wordCount: 1200,
+        keywords: ["content strategy", "digital marketing", "SEO"],
+        createdAt: "2024-03-15T10:00:00.000Z",
+        title: "The Ultimate Guide to Content Strategy",
+        url: "/blog/ultimate-guide-content-strategy"
+      },
+      {
+        id: "2",
+        wordCount: 800,
+        keywords: ["social media", "engagement", "marketing"],
+        createdAt: "2024-03-10T14:30:00.000Z",
+        title: "Boosting Social Media Engagement",
+        url: "/blog/boosting-social-media-engagement"
       }
     ],
-    urlPatterns: []
+    urlPatterns: [
+      "/blog/*",
+      "/articles/*",
+      "/resources/*"
+    ]
   }
 }; 
