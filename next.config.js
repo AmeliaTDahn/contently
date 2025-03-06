@@ -23,6 +23,23 @@ const nextConfig = {
       }
     ],
   },
-}
+  webpack: (config, { isServer }) => {
+    // Ignore source map files
+    config.module.rules.push({
+      test: /\.map$/,
+      loader: 'ignore-loader',
+    });
+
+    // Ignore puppeteer/lib imports in chrome-aws-lambda
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      'puppeteer/lib/cjs/puppeteer/common/Browser': false,
+      'puppeteer/lib/cjs/puppeteer/common/FrameManager': false,
+      'puppeteer/lib/cjs/puppeteer/common/Page': false,
+    };
+
+    return config;
+  },
+};
 
 export default nextConfig;

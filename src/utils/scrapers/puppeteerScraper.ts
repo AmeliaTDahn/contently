@@ -1,6 +1,5 @@
 import type { ScrapedContent, ScraperResult, ScraperError } from '.';
-import chromium from 'chrome-aws-lambda';
-import puppeteer, { HTTPResponse } from 'puppeteer-core';
+import puppeteer from 'puppeteer';
 
 /**
  * Helper function to convert relative URLs to absolute URLs
@@ -64,14 +63,16 @@ interface ScrapingResult {
  * Advanced scraper using Puppeteer for JavaScript-rendered content
  */
 export async function scrapePuppeteer(url: string): Promise<ScraperResult> {
-  let browser;
+  let browser = null;
   try {
-    // Use chrome-aws-lambda for better serverless compatibility
+    // Launch browser with minimal configuration
     browser = await puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
-      executablePath: await chromium.executablePath,
       headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage'
+      ]
     });
 
     const page = await browser.newPage();
@@ -81,7 +82,7 @@ export async function scrapePuppeteer(url: string): Promise<ScraperResult> {
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
     // Navigate to the page with retry logic
-    let response: HTTPResponse | null = null;
+    let response = null;
     let lastError = '';
     
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -107,9 +108,6 @@ export async function scrapePuppeteer(url: string): Promise<ScraperResult> {
     if (!response || !response.ok()) {
       throw new Error(`Failed to load page: ${lastError}`);
     }
-
-    // Wait for content to load
-    await page.waitForSelector('body', { timeout: 10000 });
 
     // Extract content using a simpler approach
     const content = await page.evaluate(() => {
