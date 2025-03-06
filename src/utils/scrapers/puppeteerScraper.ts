@@ -140,8 +140,10 @@ export async function scrapePuppeteer(url: string): Promise<ScraperResult> {
           .filter(({ text, length }) => length > 100 && !/^\s*$/.test(text))
           .sort((a, b) => b.length - a.length);
 
-        if (textBlocks.length > 0) {
-          return textBlocks[0].text;
+        // Return the largest text block or fallback to body content
+        const largestBlock = textBlocks[0];
+        if (largestBlock && largestBlock.text) {
+          return largestBlock.text;
         }
 
         // Final fallback
