@@ -369,8 +369,8 @@ export async function POST(request: NextRequest): Promise<Response> {
       db
         .insert(analyzedUrls)
         .values({
-          url: body.url,
-          status: 'processing'
+            url: body.url,
+            status: 'processing'
         })
         .returning(),
       apiConfig.maxTimeout
@@ -386,34 +386,50 @@ export async function POST(request: NextRequest): Promise<Response> {
     const recordId = urlRecord.id;
 
     try {
-      // Scrape the content
-      const scrapedData = await scrapePlaywright(body.url);
+      // Scrape the content with retries
+      const scrapedData = await withRetry(
+        () => withTimeout(scrapePlaywright(body.url), apiConfig.maxTimeout)
+      );
       
       if (!scrapedData.content || scrapedData.error) {
         throw new Error(scrapedData.error?.message || 'Failed to scrape content');
       }
 
+      const { content } = scrapedData;
+
       // Analyze content with various tools
-      const contentAnalysis = await analyzeContent(scrapedData.content.mainContent, scrapedData.content.metadata.title || '');
-      const keywordAnalysis = analyzeKeywordUsage(scrapedData.content.mainContent, []);
-      const topicCoherence = analyzeTopicCoherence(scrapedData.content.mainContent, scrapedData.content.metadata.title || '');
-      const mainTopics = extractMainTopics(scrapedData.content.mainContent);
+      const [contentAnalysis, keywordAnalysis, topicCoherence, mainTopics] = await Promise.all([
+        withTimeout(analyzeContent(content.mainContent, content.metadata.title || ''), apiConfig.maxTimeout),
+        Promise.resolve(analyzeKeywordUsage(content.mainContent, [])),
+        Promise.resolve(analyzeTopicCoherence(content.mainContent, content.metadata.title || '')),
+        Promise.resolve(extractMainTopics(content.mainContent))
+      ]);
 
-      // Get AI-powered analysis
-      const aiAnalysis = await analyzeContentWithAI({
-        content: scrapedData.content.mainContent,
-        title: scrapedData.content.metadata.title || '',
-        metadata: {
-          description: scrapedData.content.metadata.description,
-          keywords: scrapedData.content.metadata.keywords,
-          author: scrapedData.content.metadata.author
-        }
-      });
+      // Get AI-powered analysis with retries
+      const aiAnalysis = await withRetry(
+        () => withTimeout(
+          analyzeContentWithAI({
+            content: content.mainContent,
+            title: content.metadata.title || '',
+            metadata: {
+              description: content.metadata.description,
+              keywords: content.metadata.keywords,
+              author: content.metadata.author
+            }
+          }),
+          apiConfig.maxTimeout
+        )
+      );
 
-      // Predict engagement metrics
-      const engagementMetrics = await predictEngagementMetrics(
-        scrapedData.content.mainContent,
-        aiAnalysis
+      // Predict engagement metrics with retries
+      const engagementMetrics = await withRetry(
+        () => withTimeout(
+          predictEngagementMetrics(
+            content.mainContent,
+            aiAnalysis
+          ),
+          apiConfig.maxTimeout
+        )
       );
 
       // Combine all analysis results
@@ -444,8 +460,8 @@ export async function POST(request: NextRequest): Promise<Response> {
         keywords: contentAnalysis.keywords,
         keywordAnalysis: {
           distribution: `${(keywordAnalysis.distribution * 100).toFixed(1)}%`,
-          overused: keywordAnalysis.overuse,
-          underused: keywordAnalysis.underuse,
+                overused: keywordAnalysis.overuse,
+                underused: keywordAnalysis.underuse,
           explanation: 'Keyword distribution analysis'
         },
         insights: contentAnalysis.insights,
@@ -469,8 +485,8 @@ export async function POST(request: NextRequest): Promise<Response> {
       await withTimeout(
         db
           .update(analyzedUrls)
-          .set({
-            status: 'completed',
+            .set({ 
+              status: 'completed',
             completedAt: new Date()
           })
           .where(eq(analyzedUrls.id, recordId)),
@@ -481,21 +497,21 @@ export async function POST(request: NextRequest): Promise<Response> {
         JSON.stringify(savedAnalytics),
         { status: 200 }
       );
-    } catch (error) {
+      } catch (error) {
       // Update URL status to failed with timeout
       await withTimeout(
         db
           .update(analyzedUrls)
-          .set({
-            status: 'failed',
+            .set({ 
+              status: 'failed',
             errorMessage: error instanceof Error ? error.message : 'Unknown error'
-          })
+            })
           .where(eq(analyzedUrls.id, recordId)),
         apiConfig.maxTimeout
       );
-
-      throw error;
-    }
+        
+        throw error;
+      }
   } catch (error) {
     console.error('Error analyzing content:', error);
     return new Response(

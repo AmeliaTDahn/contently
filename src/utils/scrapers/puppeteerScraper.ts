@@ -1,11 +1,72 @@
 import type { ScrapedContent, ScraperResult, ScraperError } from '.';
-import { chromium } from 'playwright-core';
+import puppeteer from 'puppeteer';
 
-export async function scrapePlaywright(url: string): Promise<ScraperResult> {
+/**
+ * Helper function to convert relative URLs to absolute URLs
+ */
+function resolveUrl(baseUrl: string, relativeUrl: string | undefined): string | undefined {
+  if (!relativeUrl) return undefined;
+  
+  try {
+    // If it's already an absolute URL, return it as is
+    if (relativeUrl.startsWith('http://') || relativeUrl.startsWith('https://')) {
+      return relativeUrl;
+    }
+    
+    // If it's a protocol-relative URL (starts with //), add the protocol
+    if (relativeUrl.startsWith('//')) {
+      const baseUrlObj = new URL(baseUrl);
+      return `${baseUrlObj.protocol}${relativeUrl}`;
+    }
+    
+    // Handle anchor links (links that start with #)
+    if (relativeUrl.startsWith('#')) {
+      return `${baseUrl}${relativeUrl}`;
+    }
+    
+    // Create a URL object from the base URL
+    const baseUrlObj = new URL(baseUrl);
+    
+    // If the relative URL starts with /, it's relative to the root domain
+    if (relativeUrl.startsWith('/')) {
+      return `${baseUrlObj.origin}${relativeUrl}`;
+    }
+    
+    // Otherwise, it's relative to the current path
+    // Remove the filename from the path if it exists
+    let basePath = baseUrlObj.pathname;
+    if (!basePath.endsWith('/')) {
+      basePath = basePath.substring(0, basePath.lastIndexOf('/') + 1);
+    }
+    
+    return `${baseUrlObj.origin}${basePath}${relativeUrl}`;
+  } catch (error) {
+    console.error('Error resolving URL:', error);
+    return relativeUrl; // Return the original URL if there's an error
+  }
+}
+
+interface ScrapingResult {
+  error?: { message: string };
+  content?: {
+    mainContent: string;
+    metadata: {
+      title?: string;
+      description?: string;
+      keywords?: string[] | string;
+      author?: string;
+    };
+  };
+}
+
+/**
+ * Advanced scraper using Puppeteer for JavaScript-rendered content
+ */
+export async function scrapePuppeteer(url: string): Promise<ScraperResult> {
   let browser = null;
   try {
     // Launch browser with minimal configuration
-    browser = await chromium.launch({
+    browser = await puppeteer.launch({
       headless: true,
       args: [
         '--no-sandbox',
@@ -14,12 +75,11 @@ export async function scrapePlaywright(url: string): Promise<ScraperResult> {
       ]
     });
 
-    const context = await browser.newContext({
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    });
+    const page = await browser.newPage();
+    await page.setDefaultNavigationTimeout(60000);
 
-    const page = await context.newPage();
-    page.setDefaultTimeout(60000);
+    // Set user agent to avoid blocking
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
     // Navigate to the page with retry logic
     let response = null;
@@ -27,15 +87,16 @@ export async function scrapePlaywright(url: string): Promise<ScraperResult> {
     
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        response = await page.goto(url, { 
-          waitUntil: 'networkidle',
+        const result = await page.goto(url, { 
+          waitUntil: 'networkidle0',
           timeout: 30000
         });
         
-        if (response && response.ok()) {
+        if (result && result.ok()) {
+          response = result;
           break;
-        } else if (response) {
-          lastError = `Status: ${response.status()}`;
+        } else if (result) {
+          lastError = `Status: ${result.status()}`;
         }
       } catch (error) {
         lastError = error instanceof Error ? error.message : 'Unknown error';
@@ -162,7 +223,7 @@ export async function scrapePlaywright(url: string): Promise<ScraperResult> {
     return { content: cleanContent as ScrapedContent };
 
   } catch (error) {
-    console.error('Error in Playwright scraper:', error);
+    console.error('Error in Puppeteer scraper:', error);
     return {
       error: {
         name: error instanceof Error ? error.name : 'UnknownError',
