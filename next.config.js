@@ -30,16 +30,17 @@ const nextConfig = {
       loader: 'ignore-loader',
     });
 
-    // Ignore puppeteer/lib imports in chrome-aws-lambda
+    // Ignore browser imports in Playwright
     config.resolve.alias = {
       ...config.resolve.alias,
-      'puppeteer/lib/cjs/puppeteer/common/Browser': false,
-      'puppeteer/lib/cjs/puppeteer/common/FrameManager': false,
-      'puppeteer/lib/cjs/puppeteer/common/Page': false,
+      'playwright-core/lib/server': false,
+      'playwright-core/lib/grid': false,
+      'playwright-core/lib/outofprocess': false,
     };
 
     return config;
   },
+  serverExternalPackages: ['playwright-core'],
 };
 
 export default nextConfig;

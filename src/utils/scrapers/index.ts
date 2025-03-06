@@ -1,7 +1,7 @@
-import { scrapePuppeteer } from './puppeteerScraper';
+import { scrapePlaywright } from './playwrightScraper';
 import { scrapeServerless } from './serverlessScraper';
 
-export type ScraperMethod = 'puppeteer' | 'serverless';
+export type ScraperMethod = 'playwright' | 'serverless';
 
 export interface ScrapedContent {
   metadata: {
@@ -53,8 +53,8 @@ export interface ScraperResult {
 export const scrapeContent = async (url: string, method: ScraperMethod = 'serverless'): Promise<ScraperResult> => {
   try {
     switch (method) {
-      case 'puppeteer':
-        return await scrapePuppeteer(url);
+      case 'playwright':
+        return await scrapePlaywright(url);
       case 'serverless':
         return await scrapeServerless(url);
       default:
@@ -85,4 +85,4 @@ export const scrapeContent = async (url: string, method: ScraperMethod = 'server
   }
 };
 
-export { scrapePuppeteer, scrapeServerless }; 
+export { scrapePlaywright, scrapeServerless }; 

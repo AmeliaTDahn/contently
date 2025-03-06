@@ -1,37 +1,26 @@
 import { type NextRequest } from 'next/server';
-import { scrapePuppeteer } from '@/utils/scrapers/puppeteerScraper';
-
-interface RequestBody {
-  url: string;
-}
+import { scrapePlaywright } from '@/utils/scrapers/playwrightScraper';
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json() as RequestBody;
-    
-    if (!body.url || typeof body.url !== 'string') {
+    const body = await request.json();
+    const { url } = body;
+
+    if (!url) {
       return new Response(
-        JSON.stringify({
-          error: {
-            name: 'ValidationError',
-            message: 'URL is required and must be a string'
-          }
-        }),
+        JSON.stringify({ error: 'URL is required' }),
         { status: 400 }
       );
     }
 
-    const result = await scrapePuppeteer(body.url);
-    return new Response(JSON.stringify(result));
-  } catch (e) {
-    console.error('Error in scrape-url API:', e);
+    const result = await scrapePlaywright(url);
+    return new Response(JSON.stringify(result), { status: 200 });
+  } catch (error) {
+    console.error('Error scraping URL:', error);
     return new Response(
       JSON.stringify({
-        error: {
-          name: e instanceof Error ? e.name : 'UnknownError',
-          message: e instanceof Error ? e.message : 'An unknown error occurred',
-          stack: e instanceof Error ? e.stack : undefined
-        }
+        error: 'Failed to scrape URL',
+        details: error instanceof Error ? error.message : 'Unknown error'
       }),
       { status: 500 }
     );

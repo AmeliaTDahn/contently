@@ -1,5 +1,5 @@
 import { type NextRequest } from 'next/server';
-import { scrapePuppeteer } from '@/utils/scrapers/puppeteerScraper';
+import { scrapePlaywright } from '@/utils/scrapers/playwrightScraper';
 import { analyzeKeywordUsage } from '@/utils/keywords';
 import { analyzeTopicCoherence, extractMainTopics } from '@/utils/topics';
 import { analyzeContent, type ContentAnalysisResult } from '@/utils/contentAnalysis';
@@ -386,50 +386,34 @@ export async function POST(request: NextRequest): Promise<Response> {
     const recordId = urlRecord.id;
 
     try {
-      // Scrape the content with retries
-      const scrapedData = await withRetry(
-        () => withTimeout(scrapePuppeteer(body.url), apiConfig.maxTimeout)
-      );
+      // Scrape the content
+      const scrapedData = await scrapePlaywright(body.url);
       
       if (!scrapedData.content || scrapedData.error) {
         throw new Error(scrapedData.error?.message || 'Failed to scrape content');
       }
 
-      const { content } = scrapedData;
-
       // Analyze content with various tools
-      const [contentAnalysis, keywordAnalysis, topicCoherence, mainTopics] = await Promise.all([
-        withTimeout(analyzeContent(content.mainContent, content.metadata.title || ''), apiConfig.maxTimeout),
-        Promise.resolve(analyzeKeywordUsage(content.mainContent, [])),
-        Promise.resolve(analyzeTopicCoherence(content.mainContent, content.metadata.title || '')),
-        Promise.resolve(extractMainTopics(content.mainContent))
-      ]);
+      const contentAnalysis = await analyzeContent(scrapedData.content.mainContent, scrapedData.content.metadata.title || '');
+      const keywordAnalysis = analyzeKeywordUsage(scrapedData.content.mainContent, []);
+      const topicCoherence = analyzeTopicCoherence(scrapedData.content.mainContent, scrapedData.content.metadata.title || '');
+      const mainTopics = extractMainTopics(scrapedData.content.mainContent);
 
-      // Get AI-powered analysis with retries
-      const aiAnalysis = await withRetry(
-        () => withTimeout(
-          analyzeContentWithAI({
-            content: content.mainContent,
-            title: content.metadata.title || '',
-            metadata: {
-              description: content.metadata.description,
-              keywords: content.metadata.keywords,
-              author: content.metadata.author
-            }
-          }),
-          apiConfig.maxTimeout
-        )
-      );
+      // Get AI-powered analysis
+      const aiAnalysis = await analyzeContentWithAI({
+        content: scrapedData.content.mainContent,
+        title: scrapedData.content.metadata.title || '',
+        metadata: {
+          description: scrapedData.content.metadata.description,
+          keywords: scrapedData.content.metadata.keywords,
+          author: scrapedData.content.metadata.author
+        }
+      });
 
-      // Predict engagement metrics with retries
-      const engagementMetrics = await withRetry(
-        () => withTimeout(
-          predictEngagementMetrics(
-            content.mainContent,
-            aiAnalysis
-          ),
-          apiConfig.maxTimeout
-        )
+      // Predict engagement metrics
+      const engagementMetrics = await predictEngagementMetrics(
+        scrapedData.content.mainContent,
+        aiAnalysis
       );
 
       // Combine all analysis results

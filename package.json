@@ -21,6 +21,7 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,mdx}\" --cache"
   },
   "dependencies": {
+    "@playwright/test": "^1.51.0",
     "@supabase/supabase-js": "^2.49.1",
     "@t3-oss/env-nextjs": "^0.10.1",
     "axios": "^1.7.9",
@@ -32,8 +33,8 @@
     "lucide-react": "^0.476.0",
     "next": "^15.0.1",
     "openai": "^4.85.4",
+    "playwright-core": "^1.51.0",
     "postgres": "^3.4.4",
-    "puppeteer": "^13.5.0",
     "react": "^18.3.1",
     "react-big-calendar": "^1.18.0",
     "react-dom": "^18.3.1",
