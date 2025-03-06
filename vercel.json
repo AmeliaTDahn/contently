@@ -2,7 +2,7 @@
   "buildCommand": "npm run build",
   "installCommand": "npm install && npx playwright install chromium",
   "functions": {
-    "api/analyze-content": {
+    "src/app/api/analyze-content/route.ts": {
       "memory": 1024,
       "maxDuration": 60
     }
