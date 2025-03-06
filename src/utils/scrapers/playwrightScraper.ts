@@ -13,13 +13,24 @@ export async function scrapePlaywright(url: string): Promise<ScraperResult> {
 
     const context = await browser.newContext({
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      viewport: { width: 1280, height: 720 },
+      viewport: { width: 800, height: 600 },
       javaScriptEnabled: true,
-      bypassCSP: true
+      bypassCSP: true,
+      deviceScaleFactor: 1
     });
 
     const page = await context.newPage();
-    page.setDefaultTimeout(30000);
+    page.setDefaultTimeout(20000);
+
+    // Block unnecessary resources
+    await page.route('**/*', route => {
+      const resourceType = route.request().resourceType();
+      if (['image', 'stylesheet', 'font', 'media'].includes(resourceType)) {
+        route.abort();
+      } else {
+        route.continue();
+      }
+    });
 
     // Navigate to the page with retry logic
     let response = null;
@@ -29,7 +40,7 @@ export async function scrapePlaywright(url: string): Promise<ScraperResult> {
       try {
         response = await page.goto(url, { 
           waitUntil: 'domcontentloaded',
-          timeout: 20000
+          timeout: 15000
         });
         
         if (response && response.ok()) {
@@ -40,16 +51,13 @@ export async function scrapePlaywright(url: string): Promise<ScraperResult> {
       } catch (error) {
         lastError = error instanceof Error ? error.message : 'Unknown error';
         if (attempt === 2) throw error;
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
 
     if (!response || !response.ok()) {
       throw new Error(`Failed to load page: ${lastError}`);
     }
-
-    // Wait for content to be available
-    await page.waitForLoadState('domcontentloaded');
 
     // Extract content using a simpler approach
     const content = await page.evaluate(() => {
@@ -105,14 +113,16 @@ export async function scrapePlaywright(url: string): Promise<ScraperResult> {
           href: a.href || '',
           originalHref: a.getAttribute('href') || ''
         }))
-        .filter(link => link.text.length > 0 || link.href.length > 0);
+        .filter(link => link.text.length > 0 || link.href.length > 0)
+        .slice(0, 100); // Limit number of links
 
       const getImages = () => Array.from(document.querySelectorAll('img'))
         .map(img => ({
           src: img.src || '',
           alt: img.alt || ''
         }))
-        .filter(img => img.src.length > 0);
+        .filter(img => img.src.length > 0)
+        .slice(0, 50); // Limit number of images
 
       const getTables = () => Array.from(document.querySelectorAll('table'))
         .map(table => ({
@@ -126,7 +136,8 @@ export async function scrapePlaywright(url: string): Promise<ScraperResult> {
             )
             .filter(row => row.length > 0)
         }))
-        .filter(table => table.headers.length > 0 || table.rows.length > 0);
+        .filter(table => table.headers.length > 0 || table.rows.length > 0)
+        .slice(0, 10); // Limit number of tables
 
       const getStructuredData = () => {
         try {
@@ -138,7 +149,8 @@ export async function scrapePlaywright(url: string): Promise<ScraperResult> {
                 return {};
               }
             })
-            .filter(data => Object.keys(data).length > 0);
+            .filter(data => Object.keys(data).length > 0)
+            .slice(0, 5); // Limit number of structured data items
         } catch {
           return [];
         }
