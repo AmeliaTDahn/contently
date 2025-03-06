@@ -282,305 +282,175 @@ function getWordCountStats(content: string, existingStats?: WordCountStats): Wor
 // Set timeout for the entire analysis process
 const ANALYSIS_TIMEOUT = 120000; // 120 seconds
 
-export async function POST(request: NextRequest) {
+export async function POST(request: NextRequest): Promise<Response> {
   let urlRecord: UrlRecord | undefined;
   
   try {
-    const body = await request.json() as { url: string };
+    const body = await request.json() as RequestBody;
     
     if (!body.url || typeof body.url !== 'string') {
       return new Response(
-        JSON.stringify({
-          error: {
-            message: 'URL is required and must be a string'
-          }
-        }),
+        JSON.stringify({ error: 'Invalid URL provided' }),
         { status: 400 }
       );
     }
 
-    // Create a promise that rejects after the timeout
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Analysis timed out after 120 seconds')), ANALYSIS_TIMEOUT);
+    // Create URL record
+    const [record] = await db
+      .insert(analyzedUrls)
+      .values({
+        url: body.url,
+        status: 'processing'
+      })
+      .returning();
+    
+    if (!record) {
+      throw new Error('Failed to create URL record');
+    }
+    
+    urlRecord = record;
+
+    // Scrape content
+    const scrapingResult = await scrapePuppeteer(body.url);
+    
+    if (scrapingResult.error || !scrapingResult.content) {
+      throw new Error(scrapingResult.error?.message || 'Failed to scrape content');
+    }
+
+    const { mainContent } = scrapingResult.content;
+    const { title = '', description = '', keywords = [], author = '' } = scrapingResult.content.metadata;
+
+    // Analyze content
+    const analysis = await analyzeContent(mainContent, title);
+
+    const aiAnalysis = await analyzeContentWithAI({
+      content: mainContent,
+      title,
+      metadata: {
+        description,
+        keywords: Array.isArray(keywords) ? keywords : keywords.split(',').map(k => k.trim()),
+        author
+      }
     });
 
-    // Wrap the entire analysis process in a race with the timeout
-    const analysisPromise = (async () => {
-      try {
-        // Check for existing analysis first
-        const existingUrl = await db.query.analyzedUrls.findFirst({
-          where: eq(analyzedUrls.url, body.url)
-        });
-        
-        if (existingUrl) {
-          urlRecord = existingUrl;
-          
-          const existingAnalytics = await db.query.contentAnalytics.findFirst({
-            where: eq(contentAnalytics.analyzedUrlId, existingUrl.id)
-          });
-          
-          if (existingAnalytics) {
-            return new Response(JSON.stringify({ data: existingAnalytics }));
-          }
-        }
-
-        // Create new URL record if it doesn't exist
-        if (!urlRecord) {
-          const [newUrl] = await db.insert(analyzedUrls).values({
-            url: body.url,
-            status: 'processing'
-          }).returning();
-          urlRecord = newUrl;
-        }
-
-        // Scrape the content with error handling
-        console.log('Starting content scraping...');
-        const result = await scrapePuppeteer(body.url);
-        
-        if (result.error) {
-          throw new Error(`Scraping failed: ${result.error.message}`);
-        }
-
-        if (!result.content || !result.content.mainContent) {
-          throw new Error('Failed to extract content from URL');
-        }
-
-        console.log('Content scraped successfully, analyzing...');
-
-        // Get the main content and calculate statistics
-        const { mainContent, metadata } = result.content;
-        const wordCount = calculateWordCount(mainContent);
-        const estimatedReadTime = calculateReadingTime(wordCount);
-
-        // Get existing stats
-        let existingStats: WordCountStats | undefined;
-        if (urlRecord) {
-          const existingAnalytics = await db.query.contentAnalytics.findFirst({
-            where: eq(contentAnalytics.analyzedUrlId, urlRecord.id)
-          });
-          if (existingAnalytics?.wordCountStats) {
-            existingStats = existingAnalytics.wordCountStats;
-          }
-        }
-
-        // Calculate word count statistics
-        const wordCountStats = getWordCountStats(mainContent, existingStats);
-
-        // Get current month for articles
-        const currentDate = new Date();
-        const monthKey = currentDate.toISOString().slice(0, 7);
-        const articlesPerMonth = [{
-          date: monthKey,
-          count: 1
-        }];
-
-        console.log('Starting AI analysis...');
-
-        // Use AI to analyze the content
-        const aiAnalysis = await analyzeContentWithAI({
-          content: mainContent,
-          title: metadata.title || '',
-          metadata: {
-            description: metadata.description,
-            keywords: Array.isArray(metadata.keywords) ? metadata.keywords.join(', ') : metadata.keywords,
-            author: metadata.author
-          }
-        });
-
-        console.log('AI analysis complete, predicting engagement...');
-
-        // Extract keywords from content if none are provided by AI
-        if (!aiAnalysis.keywords || !Array.isArray(aiAnalysis.keywords) || aiAnalysis.keywords.length === 0) {
-          console.log('No keywords found in AI analysis, extracting from content...');
-          try {
-            // Extract keywords from the content using the extractKeywords utility
-            const { extractKeywords } = await import('@/utils/keywords');
-            const extractedKeywords = extractKeywords(mainContent, { maxKeywords: 10 });
-            
-            // Convert to the expected format
-            aiAnalysis.keywords = extractedKeywords.map(k => ({
-              text: k.word,
-              count: k.count
-            }));
-            
-            console.log(`Extracted ${aiAnalysis.keywords.length} keywords from content`);
-          } catch (keywordError) {
-            console.error('Error extracting keywords:', keywordError);
-            // Provide a fallback if extraction fails
-            aiAnalysis.keywords = [];
-          }
-        } else {
-          // Ensure keywords are in the correct format
-          console.log('Keywords found in AI analysis, ensuring proper format...');
-          aiAnalysis.keywords = aiAnalysis.keywords.map(keyword => {
-            if (typeof keyword === 'string') {
-              // Convert string keywords to objects with count 1
-              return { text: keyword, count: 1 };
-            } else if (typeof keyword === 'object' && keyword !== null) {
-              // Ensure object keywords have text and count properties
-              return {
-                text: 'text' in keyword ? keyword.text : String(keyword),
-                count: 'count' in keyword ? Number(keyword.count) : 1
-              };
-            } else {
-              // Fallback for unexpected types
-              return { text: String(keyword), count: 1 };
-            }
-          });
-          console.log(`Formatted ${aiAnalysis.keywords.length} keywords from AI analysis`);
-        }
-
-        // Generate keyword analysis if missing
-        if (!aiAnalysis.keywordAnalysis || !aiAnalysis.keywordAnalysis.distribution) {
-          console.log('No keyword analysis found in AI response, generating...');
-          try {
-            // Generate keyword analysis using the analyzeKeywordUsage utility
-            const { analyzeKeywordUsage } = await import('@/utils/keywords');
-            
-            // Extract keyword texts from the keywords array
-            const keywordTexts = aiAnalysis.keywords?.map(k => {
-              if (typeof k === 'string') return k;
-              if (typeof k === 'object' && k !== null && 'text' in k) return k.text;
-              return '';
-            }).filter(Boolean) || [];
-            
-            if (keywordTexts.length > 0) {
-              console.log(`Analyzing ${keywordTexts.length} keywords for distribution...`);
-              const keywordAnalysis = analyzeKeywordUsage(mainContent, keywordTexts);
-              
-              aiAnalysis.keywordAnalysis = {
-                distribution: `${(keywordAnalysis.distribution * 100).toFixed(1)}% of paragraphs contain keywords`,
-                overused: keywordAnalysis.overuse,
-                underused: keywordAnalysis.underuse,
-                explanation: 'Keywords were analyzed for distribution and density across the content.'
-              };
-              
-              console.log('Generated keyword analysis');
-            } else {
-              console.log('No valid keywords found for analysis');
-              aiAnalysis.keywordAnalysis = {
-                distribution: '0% of paragraphs contain keywords',
-                overused: [],
-                underused: [],
-                explanation: 'No keywords were available for analysis.'
-              };
-            }
-          } catch (analysisError) {
-            console.error('Error generating keyword analysis:', analysisError);
-            // Provide a fallback if analysis fails
-            aiAnalysis.keywordAnalysis = {
-              distribution: 'Unable to analyze keyword distribution',
-              overused: [],
-              underused: [],
-              explanation: 'An error occurred during keyword analysis.'
-            };
-          }
-        }
-
-        // Predict engagement metrics
-        const predictedEngagement = await predictEngagementMetrics(
-          mainContent,
-          aiAnalysis
-        );
-
-        console.log('Analysis complete, storing results...');
-
-        // Store analytics in database
-        if (urlRecord) {
-          await db.update(analyzedUrls)
-            .set({ 
-              status: 'completed',
-              completedAt: new Date(),
-              updatedAt: new Date()
-            })
-            .where(eq(analyzedUrls.id, urlRecord.id));
-          
-          const analytics = {
-            analyzedUrlId: urlRecord.id,
-            engagementScore: aiAnalysis.engagementScore ?? 0,
-            engagementExplanation: aiAnalysis.engagementExplanation ?? null,
-            contentQualityScore: aiAnalysis.contentQualityScore ?? 0,
-            contentQualityExplanation: aiAnalysis.contentQualityExplanation ?? null,
-            readabilityScore: aiAnalysis.readabilityScore ?? 0,
-            readabilityExplanation: aiAnalysis.readabilityExplanation ?? null,
-            seoScore: aiAnalysis.seoScore ?? 0,
-            seoExplanation: aiAnalysis.seoExplanation ?? null,
-            industry: aiAnalysis.industry ?? 'General',
-            industryExplanation: aiAnalysis.industryExplanation ?? null,
-            scope: aiAnalysis.scope ?? 'General',
-            scopeExplanation: aiAnalysis.scopeExplanation ?? null,
-            topics: aiAnalysis.topics ?? [],
-            topicsExplanation: aiAnalysis.topicsExplanation ?? null,
-            writingQuality: aiAnalysis.writingQuality ?? {
-              grammar: 0,
-              clarity: 0,
-              structure: 0,
-              vocabulary: 0,
-              overall: 0,
-              explanations: {
-                grammar: '',
-                clarity: '',
-                structure: '',
-                vocabulary: '',
-                overall: ''
-              }
-            },
-            audienceLevel: aiAnalysis.audienceLevel ?? 'General',
-            audienceLevelExplanation: aiAnalysis.audienceLevelExplanation ?? null,
-            contentType: aiAnalysis.contentType ?? 'Article',
-            contentTypeExplanation: aiAnalysis.contentTypeExplanation ?? null,
-            tone: aiAnalysis.tone ?? 'Neutral',
-            toneExplanation: aiAnalysis.toneExplanation ?? null,
-            estimatedReadTime,
-            keywords: aiAnalysis.keywords ?? [],
-            keywordAnalysis: aiAnalysis.keywordAnalysis ?? {
-              distribution: '',
-              overused: [],
-              underused: [],
-              explanation: ''
-            },
-            engagement: predictedEngagement,
-            insights: aiAnalysis.insights ?? {
-              engagement: [],
-              content: [],
-              readability: [],
-              seo: []
-            },
-            articlesPerMonth,
-            wordCountStats
-          };
-          
-          await db.insert(contentAnalytics).values(analytics);
-          
-          return new Response(JSON.stringify({ data: analytics }));
-        }
-
-        throw new Error('Failed to create URL record');
-      } catch (error) {
-        // Update URL status to failed if we have a record
-        if (urlRecord) {
-          await db.update(analyzedUrls)
-            .set({ 
-              status: 'failed',
-              errorMessage: error instanceof Error ? error.message : 'Unknown error',
-              updatedAt: new Date()
-            })
-            .where(eq(analyzedUrls.id, urlRecord.id));
-        }
-        
-        throw error;
+    const engagementPredictions = await predictEngagementMetrics(
+      mainContent,
+      {
+        engagementScore: aiAnalysis.engagementScore,
+        contentQualityScore: aiAnalysis.contentQualityScore,
+        readabilityScore: aiAnalysis.readabilityScore,
+        seoScore: aiAnalysis.seoScore,
+        industry: aiAnalysis.industry,
+        topics: aiAnalysis.topics,
+        audienceLevel: aiAnalysis.audienceLevel,
+        contentType: aiAnalysis.contentType,
+        tone: aiAnalysis.tone
       }
-    })();
+    );
+    
+    // Calculate word count stats
+    const wordCount = mainContent.trim().split(/\s+/).length;
+    
+    // Combine analyses and ensure required fields
+    const combinedAnalysis = {
+      analyzedUrlId: record.id,
+      engagementScore: aiAnalysis.engagementScore || 0,
+      engagementExplanation: aiAnalysis.engagementExplanation,
+      contentQualityScore: aiAnalysis.contentQualityScore || 0,
+      contentQualityExplanation: aiAnalysis.contentQualityExplanation,
+      readabilityScore: aiAnalysis.readabilityScore || 0,
+      readabilityExplanation: aiAnalysis.readabilityExplanation,
+      seoScore: aiAnalysis.seoScore || 0,
+      seoExplanation: aiAnalysis.seoExplanation,
+      industry: aiAnalysis.industry || 'General',
+      industryExplanation: aiAnalysis.industryExplanation,
+      scope: aiAnalysis.scope || 'General',
+      scopeExplanation: aiAnalysis.scopeExplanation,
+      topics: aiAnalysis.topics || [],
+      topicsExplanation: aiAnalysis.topicsExplanation,
+      writingQuality: aiAnalysis.writingQuality || {
+        grammar: 0,
+        clarity: 0,
+        structure: 0,
+        vocabulary: 0,
+        overall: 0
+      },
+      audienceLevel: aiAnalysis.audienceLevel || 'General',
+      audienceLevelExplanation: aiAnalysis.audienceLevelExplanation,
+      contentType: aiAnalysis.contentType || 'Article',
+      contentTypeExplanation: aiAnalysis.contentTypeExplanation,
+      tone: aiAnalysis.tone || 'Neutral',
+      toneExplanation: aiAnalysis.toneExplanation,
+      estimatedReadTime: Math.ceil(wordCount / 200), // Assuming 200 words per minute
+      keywords: aiAnalysis.keywords || [],
+      keywordAnalysis: aiAnalysis.keywordAnalysis || {
+        distribution: '',
+        overused: [],
+        underused: []
+      },
+      insights: aiAnalysis.insights || {
+        engagement: [],
+        content: [],
+        readability: [],
+        seo: []
+      },
+      wordCountStats: {
+        count: wordCount,
+        min: wordCount,
+        max: wordCount,
+        avg: wordCount,
+        sum: wordCount
+      },
+      articlesPerMonth: [{
+        date: new Date().toISOString().slice(0, 7),
+        count: 1
+      }],
+      engagement: engagementPredictions || {
+        likes: 0,
+        comments: 0,
+        shares: 0,
+        bookmarks: 0,
+        totalViews: 0,
+        uniqueViews: 0,
+        avgTimeOnPage: 0,
+        bounceRate: 0,
+        socialShares: {
+          facebook: 0,
+          twitter: 0,
+          linkedin: 0,
+          pinterest: 0
+        }
+      }
+    };
 
-    // Race between the analysis and the timeout
-    return await Promise.race([analysisPromise, timeoutPromise]);
+    // Save analytics
+    await db.insert(contentAnalytics).values(combinedAnalysis);
+
+    // Update URL status
+    await db
+      .update(analyzedUrls)
+      .set({ 
+        status: 'completed',
+        completedAt: new Date(),
+        updatedAt: new Date()
+      })
+      .where(eq(analyzedUrls.id, record.id));
+
+    return new Response(
+      JSON.stringify(combinedAnalysis),
+      { 
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      }
+    );
 
   } catch (error) {
-    console.error('Error in analyze-content API:', error);
+    console.error('Error analyzing content:', error);
     
     // Update URL status to failed if we have a record
     if (urlRecord) {
-      await db.update(analyzedUrls)
+      await db
+        .update(analyzedUrls)
         .set({ 
           status: 'failed',
           errorMessage: error instanceof Error ? error.message : 'Unknown error',
@@ -590,11 +460,8 @@ export async function POST(request: NextRequest) {
     }
     
     return new Response(
-      JSON.stringify({
-        error: {
-          message: error instanceof Error ? error.message : 'An unknown error occurred',
-          details: error instanceof Error ? error.stack : undefined
-        }
+      JSON.stringify({ 
+        error: error instanceof Error ? error.message : 'Failed to analyze content'
       }),
       { status: 500 }
     );

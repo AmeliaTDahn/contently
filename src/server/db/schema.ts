@@ -315,3 +315,39 @@ export const calendarEntries = createTable(
     ),
   })
 );
+
+// Table for storing calendar events
+export const calendarEvents = createTable(
+  "calendar_event",
+  {
+    id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
+    userId: varchar("user_id", { length: 256 }).notNull(),
+    title: text("title").notNull(),
+    description: text("description"),
+    reasoning: json("reasoning").$type<{
+      strategic_timing: string;
+      audience_benefit: string;
+      platform_specific: string;
+      content_strategy: string;
+    }>(),
+    startDate: timestamp("start_date", { withTimezone: true }).notNull(),
+    endDate: timestamp("end_date", { withTimezone: true }).notNull(),
+    contentType: varchar("content_type", { length: 100 }),
+    action: varchar("action", { length: 50 }).default("new"),
+    strategicTiming: text("strategic_timing"),
+    audienceBenefit: text("audience_benefit"),
+    contentGuidelines: json("content_guidelines").$type<string[]>().default([]),
+    keyPoints: json("key_points").$type<string[]>().default([]),
+    url: varchar("url", { length: 2048 }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .$onUpdate(() => new Date()),
+  },
+  (table) => ({
+    userIdIndex: index("calendar_user_id_idx").on(table.userId),
+    dateIndex: index("calendar_date_idx").on(table.startDate, table.endDate),
+  })
+);
