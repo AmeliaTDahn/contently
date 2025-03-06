@@ -1,0 +1,10 @@
+{
+  "buildCommand": "npm run build",
+  "installCommand": "npm install && npx playwright install chromium",
+  "functions": {
+    "api/analyze-content": {
+      "memory": 3008,
+      "maxDuration": 60
+    }
+  }
+} 

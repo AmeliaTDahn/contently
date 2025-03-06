@@ -7,19 +7,19 @@ export async function scrapePlaywright(url: string): Promise<ScraperResult> {
     // Launch browser with minimal configuration
     browser = await chromium.launch({
       headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage'
-      ]
+      chromiumSandbox: false,
+      executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH || undefined
     });
 
     const context = await browser.newContext({
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      viewport: { width: 1280, height: 720 },
+      javaScriptEnabled: true,
+      bypassCSP: true
     });
 
     const page = await context.newPage();
-    page.setDefaultTimeout(60000);
+    page.setDefaultTimeout(30000);
 
     // Navigate to the page with retry logic
     let response = null;
@@ -28,8 +28,8 @@ export async function scrapePlaywright(url: string): Promise<ScraperResult> {
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         response = await page.goto(url, { 
-          waitUntil: 'networkidle',
-          timeout: 30000
+          waitUntil: 'domcontentloaded',
+          timeout: 20000
         });
         
         if (response && response.ok()) {
@@ -47,6 +47,9 @@ export async function scrapePlaywright(url: string): Promise<ScraperResult> {
     if (!response || !response.ok()) {
       throw new Error(`Failed to load page: ${lastError}`);
     }
+
+    // Wait for content to be available
+    await page.waitForLoadState('domcontentloaded');
 
     // Extract content using a simpler approach
     const content = await page.evaluate(() => {
