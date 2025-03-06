@@ -23,23 +23,6 @@ const nextConfig = {
       }
     ],
   },
-  webpack: (config, { isServer }) => {
-    // Ignore source map files
-    config.module.rules.push({
-      test: /\.map$/,
-      loader: 'ignore-loader',
-    });
-
-    // Handle Playwright dependencies
-    if (isServer) {
-      config.externals.push({
-        'playwright-core': 'playwright-core',
-      });
-    }
-
-    return config;
-  },
-  serverExternalPackages: ['playwright-core'],
-};
+}
 
 export default nextConfig;

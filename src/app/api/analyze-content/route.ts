@@ -1,5 +1,5 @@
 import { type NextRequest } from 'next/server';
-import { scrapePlaywright } from '@/utils/scrapers/playwrightScraper';
+import { scrapePuppeteer } from '@/utils/scrapers/puppeteerScraper';
 import { analyzeKeywordUsage } from '@/utils/keywords';
 import { analyzeTopicCoherence, extractMainTopics } from '@/utils/topics';
 import { analyzeContent, type ContentAnalysisResult } from '@/utils/contentAnalysis';
@@ -318,6 +318,18 @@ const withRetry = async <T>(
   throw lastError || new Error('Operation failed after retries');
 };
 
+// Helper function for structured logging
+function logError(stage: string, error: unknown, details?: Record<string, unknown>) {
+  const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+  const errorStack = error instanceof Error ? error.stack : undefined;
+  console.error(JSON.stringify({
+    stage,
+    error: errorMessage,
+    stack: errorStack,
+    ...details
+  }));
+}
+
 export async function POST(request: NextRequest): Promise<Response> {
   let urlRecord: typeof analyzedUrls.$inferSelect | undefined;
 
@@ -331,189 +343,212 @@ export async function POST(request: NextRequest): Promise<Response> {
       );
     }
 
-    // Check if URL has already been analyzed
-    const existingUrl = await withTimeout(
-      db
-        .select()
-        .from(analyzedUrls)
-        .where(eq(analyzedUrls.url, body.url))
-        .limit(1),
-      apiConfig.maxTimeout
-    );
-
-    if (existingUrl.length > 0) {
-      urlRecord = existingUrl[0];
-      
-      if (urlRecord?.status === 'completed') {
-        // Fetch existing analytics
-        const analytics = await withTimeout(
-          db
-            .select()
-            .from(contentAnalytics)
-            .where(eq(contentAnalytics.analyzedUrlId, urlRecord.id))
-            .limit(1),
-          apiConfig.maxTimeout
-        );
-
-        if (analytics.length > 0) {
-          return new Response(
-            JSON.stringify(analytics[0]),
-            { status: 200 }
-          );
-        }
-      }
-    }
-
-    // Create new URL record
-    urlRecord = (await withTimeout(
-      db
-        .insert(analyzedUrls)
-        .values({
-            url: body.url,
-            status: 'processing'
-        })
-        .returning(),
-      apiConfig.maxTimeout
-    ))[0];
-
-    if (!urlRecord) {
-      return new Response(
-        JSON.stringify({ error: 'Failed to create URL record' }),
-        { status: 500 }
-      );
-    }
-
-    const recordId = urlRecord.id;
+    console.log('Starting analysis for URL:', body.url);
 
     try {
-      // Scrape the content with retries
-      const scrapedData = await withRetry(
-        () => withTimeout(scrapePlaywright(body.url), apiConfig.maxTimeout)
+      // Check if URL has already been analyzed
+      const existingUrl = await withTimeout(
+        db
+          .select()
+          .from(analyzedUrls)
+          .where(eq(analyzedUrls.url, body.url))
+          .limit(1),
+        apiConfig.maxTimeout
       );
-      
-      if (!scrapedData.content || scrapedData.error) {
-        throw new Error(scrapedData.error?.message || 'Failed to scrape content');
+
+      console.log('Checked for existing URL analysis:', existingUrl.length > 0);
+
+      if (existingUrl.length > 0) {
+        urlRecord = existingUrl[0];
+        
+        if (urlRecord?.status === 'completed') {
+          // Fetch existing analytics
+          const analytics = await withTimeout(
+            db
+              .select()
+              .from(contentAnalytics)
+              .where(eq(contentAnalytics.analyzedUrlId, urlRecord.id))
+              .limit(1),
+            apiConfig.maxTimeout
+          );
+
+          if (analytics.length > 0) {
+            console.log('Returning cached analysis for URL:', body.url);
+            return new Response(
+              JSON.stringify(analytics[0]),
+              { status: 200 }
+            );
+          }
+        }
       }
 
-      const { content } = scrapedData;
-
-      // Analyze content with various tools
-      const [contentAnalysis, keywordAnalysis, topicCoherence, mainTopics] = await Promise.all([
-        withTimeout(analyzeContent(content.mainContent, content.metadata.title || ''), apiConfig.maxTimeout),
-        Promise.resolve(analyzeKeywordUsage(content.mainContent, [])),
-        Promise.resolve(analyzeTopicCoherence(content.mainContent, content.metadata.title || '')),
-        Promise.resolve(extractMainTopics(content.mainContent))
-      ]);
-
-      // Get AI-powered analysis with retries
-      const aiAnalysis = await withRetry(
-        () => withTimeout(
-          analyzeContentWithAI({
-            content: content.mainContent,
-            title: content.metadata.title || '',
-            metadata: {
-              description: content.metadata.description,
-              keywords: content.metadata.keywords,
-              author: content.metadata.author
-            }
-          }),
-          apiConfig.maxTimeout
-        )
-      );
-
-      // Predict engagement metrics with retries
-      const engagementMetrics = await withRetry(
-        () => withTimeout(
-          predictEngagementMetrics(
-            content.mainContent,
-            aiAnalysis
-          ),
-          apiConfig.maxTimeout
-        )
-      );
-
-      // Combine all analysis results
-      const analysisResult = {
-        analyzedUrlId: recordId,
-        engagementScore: contentAnalysis.engagement_score,
-        engagementExplanation: contentAnalysis.engagement_explanation,
-        contentQualityScore: contentAnalysis.content_quality_score,
-        contentQualityExplanation: contentAnalysis.content_quality_explanation,
-        readabilityScore: contentAnalysis.readability_score,
-        readabilityExplanation: contentAnalysis.readability_explanation,
-        seoScore: contentAnalysis.seo_score,
-        seoExplanation: contentAnalysis.seo_explanation,
-        industry: contentAnalysis.industry,
-        industryExplanation: contentAnalysis.industry_explanation,
-        scope: contentAnalysis.scope,
-        scopeExplanation: contentAnalysis.scope_explanation,
-        topics: mainTopics,
-        topicsExplanation: contentAnalysis.topics_explanation,
-        writingQuality: contentAnalysis.writing_quality,
-        audienceLevel: contentAnalysis.audience_level,
-        audienceLevelExplanation: contentAnalysis.audience_level_explanation,
-        contentType: contentAnalysis.content_type,
-        contentTypeExplanation: contentAnalysis.content_type_explanation,
-        tone: contentAnalysis.tone,
-        toneExplanation: contentAnalysis.tone_explanation,
-        estimatedReadTime: contentAnalysis.estimated_read_time,
-        keywords: contentAnalysis.keywords,
-        keywordAnalysis: {
-          distribution: `${(keywordAnalysis.distribution * 100).toFixed(1)}%`,
-                overused: keywordAnalysis.overuse,
-                underused: keywordAnalysis.underuse,
-          explanation: 'Keyword distribution analysis'
-        },
-        insights: contentAnalysis.insights,
-        engagement: engagementMetrics,
-        wordCountStats: contentAnalysis.word_count_stats,
-        articlesPerMonth: contentAnalysis.articles_per_month,
-        articlesPerMonthExplanation: contentAnalysis.articles_per_month_explanation,
-        topicCoherence
-      };
-
-      // Save analysis results with timeout
-      const [savedAnalytics] = await withTimeout(
+      // Create new URL record
+      urlRecord = (await withTimeout(
         db
-          .insert(contentAnalytics)
-          .values(analysisResult)
+          .insert(analyzedUrls)
+          .values({
+            url: body.url,
+            status: 'processing'
+          })
           .returning(),
         apiConfig.maxTimeout
-      );
+      ))[0];
 
-      // Update URL status with timeout
-      await withTimeout(
-        db
-          .update(analyzedUrls)
-            .set({ 
+      if (!urlRecord) {
+        throw new Error('Failed to create URL record');
+      }
+
+      console.log('Created new URL record:', urlRecord.id);
+
+      const recordId = urlRecord.id;
+
+      try {
+        console.log('Starting content scraping...');
+        // Scrape the content with retries
+        const scrapedData = await withRetry(
+          () => withTimeout(scrapePuppeteer(body.url), apiConfig.maxTimeout)
+        );
+        
+        if (!scrapedData.content || scrapedData.error) {
+          throw new Error(scrapedData.error?.message || 'Failed to scrape content');
+        }
+
+        console.log('Content scraped successfully');
+        const { content } = scrapedData;
+
+        console.log('Starting content analysis...');
+        // Analyze content with various tools
+        const [contentAnalysis, keywordAnalysis, topicCoherence, mainTopics] = await Promise.all([
+          withTimeout(analyzeContent(content.mainContent, content.metadata.title || ''), apiConfig.maxTimeout),
+          Promise.resolve(analyzeKeywordUsage(content.mainContent, [])),
+          Promise.resolve(analyzeTopicCoherence(content.mainContent, content.metadata.title || '')),
+          Promise.resolve(extractMainTopics(content.mainContent))
+        ]);
+        console.log('Basic content analysis completed');
+
+        console.log('Starting AI analysis...');
+        // Get AI-powered analysis with retries
+        const aiAnalysis = await withRetry(
+          () => withTimeout(
+            analyzeContentWithAI({
+              content: content.mainContent,
+              title: content.metadata.title || '',
+              metadata: {
+                description: content.metadata.description,
+                keywords: content.metadata.keywords,
+                author: content.metadata.author
+              }
+            }),
+            apiConfig.maxTimeout
+          )
+        );
+        console.log('AI analysis completed');
+
+        console.log('Predicting engagement metrics...');
+        // Predict engagement metrics with retries
+        const engagementMetrics = await withRetry(
+          () => withTimeout(
+            predictEngagementMetrics(
+              content.mainContent,
+              aiAnalysis
+            ),
+            apiConfig.maxTimeout
+          )
+        );
+        console.log('Engagement metrics predicted');
+
+        // Combine all analysis results
+        const analysisResult = {
+          analyzedUrlId: recordId,
+          engagementScore: contentAnalysis.engagement_score,
+          engagementExplanation: contentAnalysis.engagement_explanation,
+          contentQualityScore: contentAnalysis.content_quality_score,
+          contentQualityExplanation: contentAnalysis.content_quality_explanation,
+          readabilityScore: contentAnalysis.readability_score,
+          readabilityExplanation: contentAnalysis.readability_explanation,
+          seoScore: contentAnalysis.seo_score,
+          seoExplanation: contentAnalysis.seo_explanation,
+          industry: contentAnalysis.industry,
+          industryExplanation: contentAnalysis.industry_explanation,
+          scope: contentAnalysis.scope,
+          scopeExplanation: contentAnalysis.scope_explanation,
+          topics: mainTopics,
+          topicsExplanation: contentAnalysis.topics_explanation,
+          writingQuality: contentAnalysis.writing_quality,
+          audienceLevel: contentAnalysis.audience_level,
+          audienceLevelExplanation: contentAnalysis.audience_level_explanation,
+          contentType: contentAnalysis.content_type,
+          contentTypeExplanation: contentAnalysis.content_type_explanation,
+          tone: contentAnalysis.tone,
+          toneExplanation: contentAnalysis.tone_explanation,
+          estimatedReadTime: contentAnalysis.estimated_read_time,
+          keywords: contentAnalysis.keywords,
+          keywordAnalysis: {
+            distribution: `${(keywordAnalysis.distribution * 100).toFixed(1)}%`,
+            overused: keywordAnalysis.overuse,
+            underused: keywordAnalysis.underuse,
+            explanation: 'Keyword distribution analysis'
+          },
+          insights: contentAnalysis.insights,
+          engagement: engagementMetrics,
+          wordCountStats: contentAnalysis.word_count_stats,
+          articlesPerMonth: contentAnalysis.articles_per_month,
+          articlesPerMonthExplanation: contentAnalysis.articles_per_month_explanation,
+          topicCoherence
+        };
+
+        console.log('Saving analysis results...');
+        // Save analysis results with timeout
+        const [savedAnalytics] = await withTimeout(
+          db
+            .insert(contentAnalytics)
+            .values(analysisResult)
+            .returning(),
+          apiConfig.maxTimeout
+        );
+        console.log('Analysis results saved');
+
+        console.log('Updating URL status...');
+        // Update URL status with timeout
+        await withTimeout(
+          db
+            .update(analyzedUrls)
+            .set({
               status: 'completed',
-            completedAt: new Date()
-          })
-          .where(eq(analyzedUrls.id, recordId)),
-        apiConfig.maxTimeout
-      );
-
-      return new Response(
-        JSON.stringify(savedAnalytics),
-        { status: 200 }
-      );
-      } catch (error) {
-      // Update URL status to failed with timeout
-      await withTimeout(
-        db
-          .update(analyzedUrls)
-            .set({ 
-              status: 'failed',
-            errorMessage: error instanceof Error ? error.message : 'Unknown error'
+              completedAt: new Date()
             })
-          .where(eq(analyzedUrls.id, recordId)),
-        apiConfig.maxTimeout
-      );
+            .where(eq(analyzedUrls.id, recordId)),
+          apiConfig.maxTimeout
+        );
+        console.log('URL status updated');
+
+        return new Response(
+          JSON.stringify(savedAnalytics),
+          { status: 200 }
+        );
+      } catch (error) {
+        logError('content-analysis', error, { url: body.url, recordId: urlRecord?.id });
+        
+        // Update URL status to failed with timeout
+        await withTimeout(
+          db
+            .update(analyzedUrls)
+            .set({
+              status: 'failed',
+              errorMessage: error instanceof Error ? error.message : 'Unknown error'
+            })
+            .where(eq(analyzedUrls.id, recordId)),
+          apiConfig.maxTimeout
+        );
         
         throw error;
       }
+    } catch (error) {
+      logError('database-operation', error, { url: body.url });
+      throw error;
+    }
   } catch (error) {
-    console.error('Error analyzing content:', error);
+    logError('request-handler', error);
     return new Response(
       JSON.stringify({
         error: 'Failed to analyze content',
