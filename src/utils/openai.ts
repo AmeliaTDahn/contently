@@ -530,4 +530,119 @@ export async function predictEngagementMetrics(
       }
     };
   }
+}
+
+interface CalendarGenerationResponse {
+  events: Array<{
+    title: string;
+    description: string;
+    start: string;
+    end: string;
+    content_type: string;
+    action: string;
+    rationale: {
+      strategic_timing: string;
+      audience_benefit: string;
+      platform_specific: string;
+      content_strategy: string;
+      content_guidelines: string[];
+      key_points: string[];
+    };
+  }>;
+}
+
+export async function generateCalendarWithAI(
+  analysisData: {
+    new_content_ideas: Array<{
+      topic: string;
+      content_type: string | null;
+      priority: number;
+      reason: string;
+    }>;
+    refresh_tasks: Array<{
+      title: string;
+      updates: string;
+      priority: number;
+      metric: string;
+    }>;
+  },
+  startDate: string,
+  durationMonths: number,
+  cadence: 'weekly' | 'biweekly' | 'monthly' = 'weekly'
+): Promise<CalendarGenerationResponse> {
+  const prompt = `
+    As an expert content strategist, create a detailed content calendar based on the following inputs:
+
+    Content Ideas:
+    ${analysisData.new_content_ideas.map(idea => `
+    - Topic: ${idea.topic}
+      Type: ${idea.content_type || 'Any'}
+      Priority: ${idea.priority}
+      Reason: ${idea.reason}
+    `).join('\n')}
+
+    Content Refresh Tasks:
+    ${analysisData.refresh_tasks.map(task => `
+    - Title: ${task.title}
+      Updates: ${task.updates}
+      Priority: ${task.priority}
+      Metric: ${task.metric}
+    `).join('\n')}
+
+    Parameters:
+    - Start Date: ${startDate}
+    - Duration: ${durationMonths} months
+    - Publishing Cadence: ${cadence}
+
+    Create a content calendar that:
+    1. Prioritizes high-priority content and refresh tasks
+    2. Distributes content evenly across the specified duration
+    3. Follows the specified publishing cadence
+    4. Provides detailed rationale for timing and strategic decisions
+    5. Includes specific content guidelines and key points for each item
+
+    Return the response as a JSON object with an "events" array, where each event has:
+    - title: string
+    - description: string
+    - start: string (YYYY-MM-DD format)
+    - end: string (YYYY-MM-DD format)
+    - content_type: string
+    - action: string ('new' or 'refresh')
+    - rationale: {
+        strategic_timing: string
+        audience_benefit: string
+        platform_specific: string
+        content_strategy: string
+        content_guidelines: string[]
+        key_points: string[]
+      }
+  `;
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4-turbo-preview",
+      messages: [
+        {
+          role: "system",
+          content: "You are an expert content strategist creating a detailed content calendar. Focus on strategic timing, audience benefits, and platform-specific considerations. Provide specific, actionable content guidelines and key points for each item."
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.7,
+    });
+
+    if (!completion.choices[0]?.message?.content) {
+      throw new Error('No response from OpenAI');
+    }
+
+    const calendar = JSON.parse(completion.choices[0].message.content) as CalendarGenerationResponse;
+    return calendar;
+  } catch (error) {
+    console.error('Error generating content calendar:', error);
+    throw error;
+  }
 } 

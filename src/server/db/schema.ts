@@ -322,7 +322,7 @@ export const calendarEvents = createTable(
   {
     id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
     userId: varchar("user_id", { length: 256 }).notNull(),
-    title: text("title").notNull(),
+    title: varchar("title", { length: 256 }).notNull(),
     description: text("description"),
     reasoning: json("reasoning").$type<{
       strategic_timing: string;
@@ -333,7 +333,7 @@ export const calendarEvents = createTable(
     startDate: timestamp("start_date", { withTimezone: true }).notNull(),
     endDate: timestamp("end_date", { withTimezone: true }).notNull(),
     contentType: varchar("content_type", { length: 100 }),
-    action: varchar("action", { length: 50 }).default("new"),
+    action: varchar("action", { length: 50 }).default('new'),
     strategicTiming: text("strategic_timing"),
     audienceBenefit: text("audience_benefit"),
     contentGuidelines: json("content_guidelines").$type<string[]>().default([]),
