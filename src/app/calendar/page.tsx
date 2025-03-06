@@ -19,6 +19,7 @@ interface CalendarEvent {
   url?: string;
   resource?: string;
   className?: string;
+  contentType: string;
   style?: {
     backgroundColor?: string;
     border?: string;
@@ -27,6 +28,7 @@ interface CalendarEvent {
 }
 
 interface CalendarEntry {
+  id: number;
   suggestedDate: string;
   contentType: string;
   topic: string;
@@ -243,6 +245,7 @@ export default function CalendarPage() {
           rationale: entry.rationale,
           resource: entry.contentType,
           className: `event-${entry.contentType}`,
+          contentType: entry.contentType,
           style: {
             backgroundColor: getEventColor(entry.contentType),
             border: 'none',
