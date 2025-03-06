@@ -1,7 +1,7 @@
 import { type NextRequest } from 'next/server';
 import { scrapePuppeteer } from '@/utils/scrapers/puppeteerScraper';
 import { analyzeKeywordUsage } from '@/utils/keywords';
-import { analyzeTopicCoherence } from '@/utils/topics';
+import { analyzeTopicCoherence, extractMainTopics } from '@/utils/topics';
 import { analyzeContent, type ContentAnalysisResult } from '@/utils/contentAnalysis';
 import { db } from '@/server/db';
 import { analyzedUrls, contentAnalytics } from '@/server/db/schema';
@@ -135,6 +135,7 @@ export interface AnalyticsResult {
       explanation?: string;
     }>;
   };
+  topicCoherence: string;
 }
 
 export interface ExtendedAnalytics {
@@ -283,185 +284,171 @@ function getWordCountStats(content: string, existingStats?: WordCountStats): Wor
 const ANALYSIS_TIMEOUT = 120000; // 120 seconds
 
 export async function POST(request: NextRequest): Promise<Response> {
-  let urlRecord: UrlRecord | undefined;
-  
+  let urlRecord: typeof analyzedUrls.$inferSelect | undefined;
+
   try {
-    const body = await request.json() as RequestBody;
-    
-    if (!body.url || typeof body.url !== 'string') {
+    const body = (await request.json()) as RequestBody;
+
+    if (!body.url) {
       return new Response(
-        JSON.stringify({ error: 'Invalid URL provided' }),
+        JSON.stringify({ error: 'URL is required' }),
         { status: 400 }
       );
     }
 
-    // Create URL record
-    const [record] = await db
+    // Check if URL has already been analyzed
+    const existingUrl = await db
+      .select()
+      .from(analyzedUrls)
+      .where(eq(analyzedUrls.url, body.url))
+      .limit(1);
+
+    if (existingUrl.length > 0) {
+      urlRecord = existingUrl[0];
+      
+      if (urlRecord?.status === 'completed') {
+        // Fetch existing analytics
+        const analytics = await db
+          .select()
+          .from(contentAnalytics)
+          .where(eq(contentAnalytics.analyzedUrlId, urlRecord.id))
+          .limit(1);
+
+        if (analytics.length > 0) {
+          return new Response(
+            JSON.stringify(analytics[0]),
+            { status: 200 }
+          );
+        }
+      }
+    }
+
+    // Create new URL record
+    urlRecord = (await db
       .insert(analyzedUrls)
       .values({
         url: body.url,
         status: 'processing'
       })
-      .returning();
-    
-    if (!record) {
-      throw new Error('Failed to create URL record');
-    }
-    
-    urlRecord = record;
+      .returning())[0];
 
-    // Scrape content
-    const scrapingResult = await scrapePuppeteer(body.url);
-    
-    if (scrapingResult.error || !scrapingResult.content) {
-      throw new Error(scrapingResult.error?.message || 'Failed to scrape content');
+    if (!urlRecord) {
+      return new Response(
+        JSON.stringify({ error: 'Failed to create URL record' }),
+        { status: 500 }
+      );
     }
 
-    const { mainContent } = scrapingResult.content;
-    const { title = '', description = '', keywords = [], author = '' } = scrapingResult.content.metadata;
+    const recordId = urlRecord.id;
 
-    // Analyze content
-    const analysis = await analyzeContent(mainContent, title);
-
-    const aiAnalysis = await analyzeContentWithAI({
-      content: mainContent,
-      title,
-      metadata: {
-        description,
-        keywords: Array.isArray(keywords) ? keywords : keywords.split(',').map(k => k.trim()),
-        author
+    try {
+      // Scrape the content
+      const scrapedData = await scrapePuppeteer(body.url);
+      
+      if (!scrapedData.content || scrapedData.error) {
+        throw new Error(scrapedData.error?.message || 'Failed to scrape content');
       }
-    });
 
-    const engagementPredictions = await predictEngagementMetrics(
-      mainContent,
-      {
-        engagementScore: aiAnalysis.engagementScore,
-        contentQualityScore: aiAnalysis.contentQualityScore,
-        readabilityScore: aiAnalysis.readabilityScore,
-        seoScore: aiAnalysis.seoScore,
-        industry: aiAnalysis.industry,
-        topics: aiAnalysis.topics,
-        audienceLevel: aiAnalysis.audienceLevel,
-        contentType: aiAnalysis.contentType,
-        tone: aiAnalysis.tone
-      }
-    );
-    
-    // Calculate word count stats
-    const wordCount = mainContent.trim().split(/\s+/).length;
-    
-    // Combine analyses and ensure required fields
-    const combinedAnalysis = {
-      analyzedUrlId: record.id,
-      engagementScore: aiAnalysis.engagementScore || 0,
-      engagementExplanation: aiAnalysis.engagementExplanation,
-      contentQualityScore: aiAnalysis.contentQualityScore || 0,
-      contentQualityExplanation: aiAnalysis.contentQualityExplanation,
-      readabilityScore: aiAnalysis.readabilityScore || 0,
-      readabilityExplanation: aiAnalysis.readabilityExplanation,
-      seoScore: aiAnalysis.seoScore || 0,
-      seoExplanation: aiAnalysis.seoExplanation,
-      industry: aiAnalysis.industry || 'General',
-      industryExplanation: aiAnalysis.industryExplanation,
-      scope: aiAnalysis.scope || 'General',
-      scopeExplanation: aiAnalysis.scopeExplanation,
-      topics: aiAnalysis.topics || [],
-      topicsExplanation: aiAnalysis.topicsExplanation,
-      writingQuality: aiAnalysis.writingQuality || {
-        grammar: 0,
-        clarity: 0,
-        structure: 0,
-        vocabulary: 0,
-        overall: 0
-      },
-      audienceLevel: aiAnalysis.audienceLevel || 'General',
-      audienceLevelExplanation: aiAnalysis.audienceLevelExplanation,
-      contentType: aiAnalysis.contentType || 'Article',
-      contentTypeExplanation: aiAnalysis.contentTypeExplanation,
-      tone: aiAnalysis.tone || 'Neutral',
-      toneExplanation: aiAnalysis.toneExplanation,
-      estimatedReadTime: Math.ceil(wordCount / 200), // Assuming 200 words per minute
-      keywords: aiAnalysis.keywords || [],
-      keywordAnalysis: aiAnalysis.keywordAnalysis || {
-        distribution: '',
-        overused: [],
-        underused: []
-      },
-      insights: aiAnalysis.insights || {
-        engagement: [],
-        content: [],
-        readability: [],
-        seo: []
-      },
-      wordCountStats: {
-        count: wordCount,
-        min: wordCount,
-        max: wordCount,
-        avg: wordCount,
-        sum: wordCount
-      },
-      articlesPerMonth: [{
-        date: new Date().toISOString().slice(0, 7),
-        count: 1
-      }],
-      engagement: engagementPredictions || {
-        likes: 0,
-        comments: 0,
-        shares: 0,
-        bookmarks: 0,
-        totalViews: 0,
-        uniqueViews: 0,
-        avgTimeOnPage: 0,
-        bounceRate: 0,
-        socialShares: {
-          facebook: 0,
-          twitter: 0,
-          linkedin: 0,
-          pinterest: 0
+      // Analyze content with various tools
+      const contentAnalysis = await analyzeContent(scrapedData.content.mainContent, scrapedData.content.metadata.title || '');
+      const keywordAnalysis = analyzeKeywordUsage(scrapedData.content.mainContent, []);
+      const topicCoherence = analyzeTopicCoherence(scrapedData.content.mainContent, scrapedData.content.metadata.title || '');
+      const mainTopics = extractMainTopics(scrapedData.content.mainContent);
+
+      // Get AI-powered analysis
+      const aiAnalysis = await analyzeContentWithAI({
+        content: scrapedData.content.mainContent,
+        title: scrapedData.content.metadata.title || '',
+        metadata: {
+          description: scrapedData.content.metadata.description,
+          keywords: scrapedData.content.metadata.keywords,
+          author: scrapedData.content.metadata.author
         }
-      }
-    };
+      });
 
-    // Save analytics
-    await db.insert(contentAnalytics).values(combinedAnalysis);
+      // Predict engagement metrics
+      const engagementMetrics = await predictEngagementMetrics(
+        scrapedData.content.mainContent,
+        aiAnalysis
+      );
 
-    // Update URL status
-    await db
-      .update(analyzedUrls)
-      .set({ 
-        status: 'completed',
-        completedAt: new Date(),
-        updatedAt: new Date()
-      })
-      .where(eq(analyzedUrls.id, record.id));
+      // Combine all analysis results
+      const analysisResult = {
+        analyzedUrlId: recordId,
+        engagementScore: contentAnalysis.engagement_score,
+        engagementExplanation: contentAnalysis.engagement_explanation,
+        contentQualityScore: contentAnalysis.content_quality_score,
+        contentQualityExplanation: contentAnalysis.content_quality_explanation,
+        readabilityScore: contentAnalysis.readability_score,
+        readabilityExplanation: contentAnalysis.readability_explanation,
+        seoScore: contentAnalysis.seo_score,
+        seoExplanation: contentAnalysis.seo_explanation,
+        industry: contentAnalysis.industry,
+        industryExplanation: contentAnalysis.industry_explanation,
+        scope: contentAnalysis.scope,
+        scopeExplanation: contentAnalysis.scope_explanation,
+        topics: mainTopics,
+        topicsExplanation: contentAnalysis.topics_explanation,
+        writingQuality: contentAnalysis.writing_quality,
+        audienceLevel: contentAnalysis.audience_level,
+        audienceLevelExplanation: contentAnalysis.audience_level_explanation,
+        contentType: contentAnalysis.content_type,
+        contentTypeExplanation: contentAnalysis.content_type_explanation,
+        tone: contentAnalysis.tone,
+        toneExplanation: contentAnalysis.tone_explanation,
+        estimatedReadTime: contentAnalysis.estimated_read_time,
+        keywords: contentAnalysis.keywords,
+        keywordAnalysis: {
+          distribution: `${(keywordAnalysis.distribution * 100).toFixed(1)}%`,
+          overused: keywordAnalysis.overuse,
+          underused: keywordAnalysis.underuse,
+          explanation: 'Keyword distribution analysis'
+        },
+        insights: contentAnalysis.insights,
+        engagement: engagementMetrics,
+        wordCountStats: contentAnalysis.word_count_stats,
+        articlesPerMonth: contentAnalysis.articles_per_month,
+        articlesPerMonthExplanation: contentAnalysis.articles_per_month_explanation,
+        topicCoherence
+      };
 
-    return new Response(
-      JSON.stringify(combinedAnalysis),
-      { 
-        status: 200,
-        headers: { 'Content-Type': 'application/json' }
-      }
-    );
+      // Save analysis results
+      const [savedAnalytics] = await db
+        .insert(contentAnalytics)
+        .values(analysisResult)
+        .returning();
 
-  } catch (error) {
-    console.error('Error analyzing content:', error);
-    
-    // Update URL status to failed if we have a record
-    if (urlRecord) {
+      // Update URL status
       await db
         .update(analyzedUrls)
-        .set({ 
-          status: 'failed',
-          errorMessage: error instanceof Error ? error.message : 'Unknown error',
-          updatedAt: new Date()
+        .set({
+          status: 'completed',
+          completedAt: new Date()
         })
-        .where(eq(analyzedUrls.id, urlRecord.id));
+        .where(eq(analyzedUrls.id, recordId));
+
+      return new Response(
+        JSON.stringify(savedAnalytics),
+        { status: 200 }
+      );
+    } catch (error) {
+      // Update URL status to failed
+      await db
+        .update(analyzedUrls)
+        .set({
+          status: 'failed',
+          errorMessage: error instanceof Error ? error.message : 'Unknown error'
+        })
+        .where(eq(analyzedUrls.id, recordId));
+
+      throw error;
     }
-    
+  } catch (error) {
+    console.error('Error analyzing content:', error);
     return new Response(
-      JSON.stringify({ 
-        error: error instanceof Error ? error.message : 'Failed to analyze content'
+      JSON.stringify({
+        error: 'Failed to analyze content',
+        details: error instanceof Error ? error.message : 'Unknown error'
       }),
       { status: 500 }
     );
