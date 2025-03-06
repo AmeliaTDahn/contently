@@ -39,9 +39,7 @@ const nextConfig = {
 
     return config;
   },
-  experimental: {
-    serverComponentsExternalPackages: ['playwright-core'],
-  },
+  serverExternalPackages: ['playwright-core'],
 };
 
 export default nextConfig;
