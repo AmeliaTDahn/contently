@@ -1,10 +1,10 @@
 export const config = {
-  runtime: 'edge',
-  regions: ['iad1'], // Use a specific region for better performance
+  runtime: 'nodejs',
+  maxDuration: 300 // 5 minutes in seconds
 };
 
 export const apiConfig = {
-  maxTimeout: 60000, // 60 seconds
+  maxTimeout: 240000, // 4 minutes
   maxRetries: 3,
   retryDelay: 1000, // 1 second
 }; 

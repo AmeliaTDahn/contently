@@ -65,170 +65,116 @@ interface ScrapingResult {
 export async function scrapePuppeteer(url: string): Promise<ScraperResult> {
   let browser;
   try {
+    // Use minimal browser configuration
     browser = await puppeteer.launch({
       headless: true,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--disable-gpu',
-        '--window-size=1920x1080',
+        '--disable-dev-shm-usage'
       ]
     });
 
     const page = await browser.newPage();
-    
-    // Set longer timeouts
-    await page.setDefaultNavigationTimeout(45000); // 45 seconds
-    await page.setDefaultTimeout(45000);
-
-    // Block unnecessary resources to speed up loading
-    await page.setRequestInterception(true);
-    page.on('request', (request) => {
-      const resourceType = request.resourceType();
-      if (['image', 'stylesheet', 'font', 'media'].includes(resourceType)) {
-        request.abort();
-      } else {
-        request.continue();
-      }
-    });
+    await page.setDefaultNavigationTimeout(60000);
 
     // Navigate to the page
-    const response = await page.goto(url, {
-      waitUntil: 'networkidle0',
-      timeout: 45000
-    });
+    await page.goto(url, { waitUntil: 'networkidle0' });
 
-    if (!response) {
-      throw new Error('Failed to get response from page');
-    }
-
-    const status = response.status();
-    if (status !== 200) {
-      throw new Error(`Page returned status code ${status}`);
-    }
-
-    // Extract metadata and content
-    const metadata = await Promise.race([
-      page.evaluate(() => ({
+    // Extract content using a simpler approach
+    const content = await page.evaluate(() => {
+      const getMetadata = () => ({
         title: document.title || '',
         description: document.querySelector('meta[name="description"]')?.getAttribute('content') || '',
         keywords: document.querySelector('meta[name="keywords"]')?.getAttribute('content')?.split(',').map(k => k.trim()) || [],
         author: document.querySelector('meta[name="author"]')?.getAttribute('content') || '',
         ogImage: document.querySelector('meta[property="og:image"]')?.getAttribute('content') || ''
-      })),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Metadata extraction timed out')), 10000))
-    ]) as ScrapedContent['metadata'];
+      });
 
-    // Extract main content and other required fields
-    interface ExtractedContent {
-      headings: { h1Tags: string[]; headings: string[] };
-      links: Array<{ text: string; href: string; originalHref: string }>;
-      images: Array<{ src: string; alt: string }>;
-      tables: Array<{ headers: string[]; rows: string[][] }>;
-      structuredData: Record<string, unknown>[];
-      mainContent: string;
-    }
-
-    const content = await Promise.race([
-      page.evaluate(() => {
-        // Remove script tags, style tags, and comments
-        const scripts = document.getElementsByTagName('script');
-        const styles = document.getElementsByTagName('style');
-        Array.from(scripts).forEach(script => script.remove());
-        Array.from(styles).forEach(style => style.remove());
-
-        // Get headings
-        const h1Tags = Array.from(document.querySelectorAll('h1')).map(h => h.textContent || '');
-        const headings = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6')).map(h => h.textContent || '');
-
-        // Get links
-        const links = Array.from(document.querySelectorAll('a')).map(a => ({
-          text: a.textContent || '',
-          href: a.href || '',
-          originalHref: a.getAttribute('href') || ''
-        }));
-
-        // Get images
-        const images = Array.from(document.querySelectorAll('img')).map(img => ({
-          src: img.src || '',
-          alt: img.alt || ''
-        }));
-
-        // Get tables
-        const tables = Array.from(document.querySelectorAll('table')).map(table => ({
-          headers: Array.from(table.querySelectorAll('th')).map(th => th.textContent || ''),
-          rows: Array.from(table.querySelectorAll('tr')).map(tr => 
-            Array.from(tr.querySelectorAll('td')).map(td => td.textContent || '')
-          )
-        }));
-
-        // Get structured data
-        const structuredData = Array.from(document.querySelectorAll('script[type="application/ld+json"]'))
-          .map(script => {
-            try {
-              return JSON.parse(script.textContent || '{}');
-            } catch {
-              return {};
-            }
-          });
-
-        // Get main content
-        const article = document.querySelector('article');
-        const main = document.querySelector('main');
-        const contentDiv = document.querySelector('.content');
-        let mainContent = '';
-        
-        if (article) {
-          mainContent = article.textContent || '';
-        } else if (main) {
-          mainContent = main.textContent || '';
-        } else if (contentDiv) {
-          mainContent = contentDiv.textContent || '';
-        } else {
-          mainContent = document.body.textContent || '';
+      const getMainContent = () => {
+        // Try to get content from common selectors
+        const selectors = ['article', 'main', '.content', '.article', '.post'];
+        for (const selector of selectors) {
+          const element = document.querySelector(selector);
+          if (element?.textContent) {
+            return element.textContent.trim();
+          }
         }
 
-        return {
-          headings: { h1Tags, headings },
-          links,
-          images,
-          tables,
-          structuredData,
-          mainContent: mainContent.trim()
-        };
-      }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Content extraction timed out')), 15000))
-    ]) as ExtractedContent;
+        // Fallback to getting the largest text block
+        const textBlocks = Array.from(document.querySelectorAll('p, div, section'))
+          .map(el => el.textContent || '')
+          .filter(text => text.length > 100)
+          .sort((a, b) => b.length - a.length);
+
+        return textBlocks[0] || document.body?.textContent?.trim() || '';
+      };
+
+      const getHeadings = () => ({
+        h1Tags: Array.from(document.querySelectorAll('h1')).map(h => h.textContent || ''),
+        headings: Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6')).map(h => h.textContent || '')
+      });
+
+      const getLinks = () => Array.from(document.querySelectorAll('a')).map(a => ({
+        text: a.textContent || '',
+        href: a.href || '',
+        originalHref: a.getAttribute('href') || ''
+      }));
+
+      const getImages = () => Array.from(document.querySelectorAll('img')).map(img => ({
+        src: img.src || '',
+        alt: img.alt || ''
+      }));
+
+      const getTables = () => Array.from(document.querySelectorAll('table')).map(table => ({
+        headers: Array.from(table.querySelectorAll('th')).map(th => th.textContent || ''),
+        rows: Array.from(table.querySelectorAll('tr')).map(tr => 
+          Array.from(tr.querySelectorAll('td')).map(td => td.textContent || '')
+        )
+      }));
+
+      const getStructuredData = () => {
+        try {
+          return Array.from(document.querySelectorAll('script[type="application/ld+json"]'))
+            .map(script => JSON.parse(script.textContent || '{}'));
+        } catch {
+          return [];
+        }
+      };
+
+      return {
+        metadata: getMetadata(),
+        headings: getHeadings(),
+        links: getLinks(),
+        images: getImages(),
+        tables: getTables(),
+        structuredData: getStructuredData(),
+        mainContent: getMainContent()
+      };
+    });
 
     if (!content.mainContent || content.mainContent.length < 100) {
       throw new Error('Failed to extract meaningful content from the page');
     }
 
-    const scrapedContent: ScrapedContent = {
-      metadata,
-      headings: content.headings,
-      links: content.links,
-      images: content.images,
-      tables: content.tables,
-      structuredData: content.structuredData,
-      mainContent: content.mainContent
-    };
-
-    return { content: scrapedContent };
+    return { content: content as ScrapedContent };
 
   } catch (error) {
     console.error('Error in Puppeteer scraper:', error);
-    const scraperError: ScraperError = {
-      name: error instanceof Error ? error.name : 'UnknownError',
-      message: error instanceof Error ? error.message : 'Unknown error occurred while scraping',
-      stack: error instanceof Error ? error.stack : undefined
+    return {
+      error: {
+        name: error instanceof Error ? error.name : 'UnknownError',
+        message: error instanceof Error ? error.message : 'Unknown error occurred while scraping',
+        stack: error instanceof Error ? error.stack : undefined
+      }
     };
-    return { error: scraperError };
   } finally {
     if (browser) {
-      await browser.close();
+      try {
+        await browser.close();
+      } catch (error) {
+        console.error('Error closing browser:', error);
+      }
     }
   }
 } 
