@@ -278,15 +278,15 @@ export const maxDuration = 60;
 
 export async function POST(req: Request) {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 55000); // Abort just before Vercel's timeout
+  const timeoutId = setTimeout(() => controller.abort(), 55000);
 
   try {
     const { url } = await req.json();
 
     if (!url) {
-      return NextResponse.json(
-        { error: 'URL is required' },
-        { status: 400 }
+      return new Response(
+        JSON.stringify({ error: 'URL is required' }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } }
       );
     }
 
@@ -295,30 +295,30 @@ export async function POST(req: Request) {
 
     if (scrapedResult.error) {
       console.error('Error scraping URL:', scrapedResult.error);
-      return NextResponse.json(
-        { error: scrapedResult.error.message },
-        { status: 500 }
+      return new Response(
+        JSON.stringify({ error: scrapedResult.error.message }),
+        { status: 500, headers: { 'Content-Type': 'application/json' } }
       );
     }
 
     if (!scrapedResult.content) {
-      return NextResponse.json(
-        { error: 'No content found in the scraped result' },
-        { status: 400 }
+      return new Response(
+        JSON.stringify({ error: 'No content found in the scraped result' }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } }
       );
     }
 
     // Check content length and return early if it's too long
     const wordCount = (scrapedResult.content.mainContent || '').split(/\s+/).length;
     if (wordCount > 5000) {
-      return NextResponse.json(
-        { error: 'Content is too long to analyze. Please try a shorter article (less than 5000 words).' },
-        { status: 400 }
+      return new Response(
+        JSON.stringify({ error: 'Content is too long to analyze. Please try a shorter article (less than 5000 words).' }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } }
       );
     }
 
     try {
-      // Analyze the content using OpenAI with timeout
+      // Step 1: Initial content analysis with shorter timeout
       const analysis = await Promise.race([
         analyzeContentWithAI({
           content: scrapedResult.content.mainContent || '',
@@ -329,27 +329,49 @@ export async function POST(req: Request) {
             author: scrapedResult.content.metadata.author || ''
           }
         }),
-        new Promise<Partial<AnalyticsResult>>((_, reject) => {
+        new Promise((_, reject) => {
           setTimeout(() => {
-            reject(new Error('Content analysis timed out. Please try again with a shorter article.'));
-          }, 45000); // Timeout before Vercel's limit
+            reject(new Error('Initial analysis timed out. Please try again with a shorter article.'));
+          }, 30000);
         })
       ]);
 
-      // Get engagement predictions using the analysis results
-      const engagement = await Promise.race([
-        predictEngagementMetrics(
-          scrapedResult.content.mainContent || '',
-          analysis as Partial<AnalyticsResult>
-        ),
-        new Promise<EngagementMetrics>((_, reject) => {
-          setTimeout(() => {
-            reject(new Error('Engagement prediction timed out. Please try again.'));
-          }, 8000);
-        })
-      ]);
+      // Step 2: Quick engagement prediction
+      let engagement;
+      try {
+        engagement = await Promise.race([
+          predictEngagementMetrics(
+            scrapedResult.content.mainContent || '',
+            analysis as Partial<AnalyticsResult>
+          ),
+          new Promise((_, reject) => {
+            setTimeout(() => {
+              reject(new Error('Engagement prediction timed out.'));
+            }, 5000);
+          })
+        ]);
+      } catch (engagementError) {
+        console.warn('Engagement prediction failed:', engagementError);
+        // Provide default engagement metrics if prediction fails
+        engagement = {
+          likes: 0,
+          comments: 0,
+          shares: 0,
+          bookmarks: 0,
+          totalViews: 0,
+          uniqueViews: 0,
+          avgTimeOnPage: 0,
+          bounceRate: 0,
+          socialShares: {
+            facebook: 0,
+            twitter: 0,
+            linkedin: 0,
+            pinterest: 0
+          }
+        };
+      }
 
-      // Combine all results
+      // Combine results
       const result = {
         data: {
           currentArticle: {
@@ -362,7 +384,7 @@ export async function POST(req: Request) {
               min: 0,
               max: 0,
               avg: 0,
-              sum: 0
+              sum: wordCount // Use actual word count
             },
             articlesPerMonth: []
           }
@@ -370,35 +392,40 @@ export async function POST(req: Request) {
       };
 
       clearTimeout(timeoutId);
-      return NextResponse.json(result);
+      return new Response(
+        JSON.stringify(result),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
     } catch (analysisError) {
       console.error('Error in content analysis:', analysisError);
-      return NextResponse.json(
-        { error: analysisError instanceof Error ? analysisError.message : 'Analysis failed' },
-        { status: 408 }
+      return new Response(
+        JSON.stringify({ 
+          error: analysisError instanceof Error ? analysisError.message : 'Analysis failed',
+          details: analysisError instanceof Error ? analysisError.stack : undefined
+        }),
+        { status: 408, headers: { 'Content-Type': 'application/json' } }
       );
     }
   } catch (error) {
     clearTimeout(timeoutId);
     console.error('Error in analyze-content route:', error);
     
-    // Handle different types of errors
     if (error instanceof Error) {
       if (error.name === 'AbortError') {
-        return NextResponse.json(
-          { error: 'The request took too long to process. Please try again with a shorter article.' },
-          { status: 408 }
+        return new Response(
+          JSON.stringify({ error: 'The request took too long to process. Please try again with a shorter article.' }),
+          { status: 408, headers: { 'Content-Type': 'application/json' } }
         );
       }
-      return NextResponse.json(
-        { error: error.message },
-        { status: 500 }
+      return new Response(
+        JSON.stringify({ error: error.message }),
+        { status: 500, headers: { 'Content-Type': 'application/json' } }
       );
     }
     
-    return NextResponse.json(
-      { error: 'An unexpected error occurred' },
-      { status: 500 }
+    return new Response(
+      JSON.stringify({ error: 'An unexpected error occurred' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }
 } 

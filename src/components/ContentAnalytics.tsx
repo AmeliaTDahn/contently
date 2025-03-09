@@ -219,21 +219,28 @@ export const ContentAnalytics: React.FC = () => {
         body: JSON.stringify({ url }),
       });
 
-      const data = await response.json();
+      let data;
+      try {
+        const textResponse = await response.text();
+        data = JSON.parse(textResponse);
+      } catch (parseError) {
+        console.error('Error parsing response:', parseError);
+        throw new Error('Failed to parse server response. Please try again.');
+      }
       
       // If the response was very fast (less than 1 second), it likely came from cache
       const responseTime = Date.now() - startTime;
       setLoadedFromCache(responseTime < 1000);
 
       if (!response.ok) {
-        let errorMessage = data.error || 'Failed to analyze content';
+        let errorMessage = data?.error || 'Failed to analyze content';
         if (response.status === 408) {
           errorMessage = 'The analysis took too long. Please try a shorter article or try again later.';
         }
         throw new Error(errorMessage);
       }
 
-      if (!data.data) {
+      if (!data?.data) {
         throw new Error('No analysis data received from the server');
       }
 
