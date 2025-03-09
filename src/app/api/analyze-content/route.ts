@@ -278,10 +278,11 @@ export const maxDuration = 60;
 
 export async function POST(req: Request) {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 55000); // Set to 55 seconds to stay under the 60s limit
+  const timeoutId = setTimeout(() => controller.abort(), 55000);
 
   try {
     const { url } = await req.json();
+    console.log('Starting analysis for URL:', url);
 
     if (!url) {
       clearTimeout(timeoutId);
@@ -291,10 +292,11 @@ export async function POST(req: Request) {
       );
     }
 
-    console.log('Analyzing URL:', url);
+    console.log('1. Scraping content...');
     const scrapedResult = await scrapePuppeteer(url);
 
     if (scrapedResult.error) {
+      console.error('Scraping failed:', scrapedResult.error);
       clearTimeout(timeoutId);
       return Response.json(
         { error: scrapedResult.error.message },
@@ -303,6 +305,7 @@ export async function POST(req: Request) {
     }
 
     if (!scrapedResult.content) {
+      console.error('No content found in scraped result');
       clearTimeout(timeoutId);
       return Response.json(
         { error: 'No content found in the scraped result' },
@@ -310,8 +313,10 @@ export async function POST(req: Request) {
       );
     }
 
-    // Check content length and return early if it's too long
+    console.log('2. Checking content length...');
     const wordCount = (scrapedResult.content.mainContent || '').split(/\s+/).length;
+    console.log('Word count:', wordCount);
+    
     if (wordCount > 5000) {
       clearTimeout(timeoutId);
       return Response.json(
@@ -321,7 +326,7 @@ export async function POST(req: Request) {
     }
 
     try {
-      // Step 1: Initial content analysis with timeout
+      console.log('3. Starting content analysis...');
       const analysis = await Promise.race([
         analyzeContentWithAI({
           content: scrapedResult.content.mainContent || '',
@@ -335,22 +340,62 @@ export async function POST(req: Request) {
         new Promise((_, reject) => {
           setTimeout(() => {
             reject(new Error('Content analysis timed out after 45 seconds. The article may be too complex to analyze.'));
-          }, 45000); // 45 seconds for main analysis
+          }, 45000);
         })
       ]);
 
-      // Step 2: Quick engagement prediction
+      console.log('4. Content analysis completed:', analysis ? 'success' : 'no data');
+      if (!analysis) {
+        throw new Error('Content analysis returned no data');
+      }
+
+      // Ensure all required fields are present with default values if needed
+      const baseAnalysis = {
+        engagementScore: 0,
+        contentQualityScore: 0,
+        readabilityScore: 0,
+        seoScore: 0,
+        insights: {
+          engagement: [],
+          content: [],
+          readability: [],
+          seo: []
+        },
+        industry: '',
+        scope: '',
+        topics: [],
+        writingQuality: {
+          grammar: 0,
+          clarity: 0,
+          structure: 0,
+          vocabulary: 0,
+          overall: 0
+        },
+        audienceLevel: '',
+        contentType: '',
+        tone: '',
+        estimatedReadTime: calculateReadingTime(wordCount),
+        keywords: [],
+        keywordAnalysis: {
+          distribution: '',
+          overused: [],
+          underused: []
+        },
+        ...analysis
+      };
+
+      console.log('5. Starting engagement prediction...');
       let engagement;
       try {
         engagement = await Promise.race([
           predictEngagementMetrics(
             scrapedResult.content.mainContent || '',
-            analysis as Partial<AnalyticsResult>
+            baseAnalysis
           ),
           new Promise((_, reject) => {
             setTimeout(() => {
               reject(new Error('Engagement prediction timed out.'));
-            }, 8000); // 8 seconds for engagement prediction
+            }, 8000);
           })
         ]);
       } catch (engagementError) {
@@ -373,40 +418,35 @@ export async function POST(req: Request) {
         };
       }
 
-      // Combine results
+      console.log('6. Preparing final response...');
       const result = {
         data: {
           currentArticle: {
-            ...(analysis as Partial<AnalyticsResult>),
-            engagement
-          },
-          stats: (analysis as Partial<AnalyticsResult>).stats || {
-            wordCountStats: {
-              count: 0,
-              min: 0,
-              max: 0,
-              avg: 0,
-              sum: wordCount
-            },
-            articlesPerMonth: []
+            ...baseAnalysis,
+            engagement,
+            stats: {
+              wordCountStats: getWordCountStats(scrapedResult.content.mainContent || ''),
+              articlesPerMonth: []
+            }
           }
         }
       };
 
+      console.log('7. Analysis complete, sending response');
       clearTimeout(timeoutId);
       return Response.json(result, { status: 200 });
 
     } catch (analysisError) {
+      console.error('Analysis error:', analysisError);
       clearTimeout(timeoutId);
-      console.error('Error in content analysis:', analysisError);
       return Response.json({ 
         error: analysisError instanceof Error ? analysisError.message : 'Analysis failed',
         details: analysisError instanceof Error ? analysisError.stack : undefined
       }, { status: 408 });
     }
   } catch (error) {
+    console.error('Route error:', error);
     clearTimeout(timeoutId);
-    console.error('Error in analyze-content route:', error);
     
     if (error instanceof Error) {
       if (error.name === 'AbortError') {
