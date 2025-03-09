@@ -5,7 +5,7 @@ import CalendarView from '@/components/CalendarView';
 import Navbar from '@/components/Navbar';
 
 interface ContentType {
-  id: string;
+  id: 'instagram' | 'youtube' | 'twitter' | 'blog' | 'podcast';
   label: string;
 }
 
@@ -17,18 +17,10 @@ interface CalendarEvent {
   description?: string;
   rationale?: string;
   url?: string;
-  resource?: string;
-  className?: string;
-  contentType: string;
-  style?: {
-    backgroundColor?: string;
-    border?: string;
-    borderRadius?: string;
-  };
+  contentType: ContentType['id'];
 }
 
 interface CalendarEntry {
-  id: number;
   suggestedDate: string;
   contentType: string;
   topic: string;
@@ -39,38 +31,23 @@ interface CalendarEntry {
 const contentTypes: ContentType[] = [
   { id: 'instagram', label: 'Instagram' },
   { id: 'youtube', label: 'YouTube' },
-  { id: 'facebook', label: 'Facebook' },
-  { id: 'twitter', label: 'Twitter/X' },
-  { id: 'linkedin', label: 'LinkedIn' },
-  { id: 'tiktok', label: 'TikTok' },
+  { id: 'twitter', label: 'Twitter' },
   { id: 'blog', label: 'Blog Post' },
-  { id: 'newsletter', label: 'Newsletter' },
-  { id: 'podcast', label: 'Podcast' },
-  { id: 'pinterest', label: 'Pinterest' },
-  { id: 'medium', label: 'Medium' },
-  { id: 'threads', label: 'Threads' }
+  { id: 'podcast', label: 'Podcast' }
 ];
 
 // Function to get color for a content type
-const getEventColor = (contentType: string | undefined): string => {
+const getEventColor = (contentType: ContentType['id'] | undefined): string => {
   const colors = {
     instagram: '#E1306C',
     youtube: '#FF0000',
-    facebook: '#4267B2',
     twitter: '#1DA1F2',
-    linkedin: '#0077B5',
-    tiktok: '#000000',
     blog: '#14b8a6',
-    newsletter: '#6366f1',
-    podcast: '#8B4513',
-    pinterest: '#E60023',
-    medium: '#000000',
-    threads: '#101010',
+    podcast: '#8B5CF6',
     default: '#6366f1'
   } as const;
 
-  const key = contentType?.toLowerCase() ?? 'default';
-  return colors[key as keyof typeof colors] || colors.default;
+  return colors[contentType ?? 'default'] || colors.default;
 };
 
 export default function CalendarPage() {
@@ -95,14 +72,14 @@ export default function CalendarPage() {
         if (data.entries && Array.isArray(data.entries)) {
           // Convert database entries to calendar events
           const calendarEvents = data.entries.map((entry: any) => ({
-            id: entry.id.toString(),
+            id: `${entry.contentType}-${entry.id}`,
             title: `${entry.contentType} - ${entry.topic}`,
             start: new Date(entry.suggestedDate),
             end: new Date(new Date(entry.suggestedDate).setHours(new Date(entry.suggestedDate).getHours() + 1)),
             description: entry.description,
             rationale: entry.rationale,
-            contentType: entry.contentType,
             resource: entry.contentType,
+            contentType: entry.contentType,
             className: `event-${entry.contentType}`,
             style: {
               backgroundColor: getEventColor(entry.contentType),
@@ -235,24 +212,23 @@ export default function CalendarPage() {
         const endDate = new Date(startDate);
         endDate.setHours(startDate.getHours() + 1); // Set end time to 1 hour after start
 
-        // Since we've validated the entry with isValidCalendarEntry, we know contentType is a string
+        // Validate content type
+        const contentType = entry.contentType as ContentType['id'];
+        if (!['instagram', 'youtube', 'twitter', 'blog', 'podcast'].includes(contentType)) {
+          console.error('Invalid content type:', contentType);
+          throw new Error('Invalid content type received from server');
+        }
+
         const event: CalendarEvent = {
-          id: entry.id.toString(),
-          title: `${entry.contentType} - ${entry.topic}`,
+          id: `${contentType}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          title: `${contentType} - ${entry.topic}`,
           start: startDate,
           end: endDate,
           description: entry.description,
           rationale: entry.rationale,
-          resource: entry.contentType,
-          className: `event-${entry.contentType}`,
-          contentType: entry.contentType,
-          style: {
-            backgroundColor: getEventColor(entry.contentType),
-            border: 'none',
-            borderRadius: '4px',
-          }
+          contentType
         };
-        console.log('Created event:', event);
+
         return event;
       });
 

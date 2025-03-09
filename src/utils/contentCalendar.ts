@@ -79,8 +79,13 @@ export function generateContentCalendar(
       continue; // Skip if no recommendation is available
     }
 
+    const isoDate = currentDate.toISODate();
+    if (!isoDate) {
+      continue; // Skip if date is invalid
+    }
+
     calendar.push({
-      date: currentDate.toISODate() ?? currentDate.toFormat('yyyy-MM-dd'),
+      date: isoDate,
       title: recommendation.title,
       content_type: recommendation.content_type,
       action: recommendation.action,

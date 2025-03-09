@@ -1,4 +1,4 @@
-import { analyzeContentWithAI } from './ai';
+import { analyzeContentWithAI } from '../utils/openai';
 import { scrapeContent } from '../utils/scrapers';
 import { OpenAI } from 'openai';
 
@@ -16,9 +16,10 @@ interface PostSuggestion {
   explanation: string;
 }
 
-function getMostCommon(arr: string[]): string | null {
-  if (arr.length === 0) return null;
-  const frequencyMap = arr.reduce((acc, val) => {
+function getMostCommon(arr: (string | undefined)[]): string | null {
+  const validValues = arr.filter((val): val is string => val !== undefined);
+  if (validValues.length === 0) return null;
+  const frequencyMap = validValues.reduce((acc, val) => {
     acc.set(val, (acc.get(val) || 0) + 1);
     return acc;
   }, new Map<string, number>());

@@ -10,6 +10,7 @@ import {
   boolean,
   pgEnum,
 } from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
 
 /**
  * This is an example of how to use the multi-project schema feature of Drizzle ORM. Use the same
@@ -297,11 +298,6 @@ export const calendarEntries = createTable(
     topic: varchar("topic", { length: 256 }),
     description: text("description").notNull(),
     rationale: text("rationale").notNull(),
-    visualStrategy: json("visual_strategy").$type<{
-      mainImage: string;
-      infographics: string[];
-      style: string;
-    }>(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
@@ -347,7 +343,43 @@ export const calendarEvents = createTable(
       .$onUpdate(() => new Date()),
   },
   (table) => ({
-    userIdIndex: index("calendar_user_id_idx").on(table.userId),
-    dateIndex: index("calendar_date_idx").on(table.startDate, table.endDate),
+    userIdIndex: index("calendar_event_user_id_idx").on(table.userId),
+    dateRangeIndex: index("calendar_event_date_range_idx").on(table.startDate, table.endDate),
   })
 );
+
+export const analyzedUrlsRelations = relations(analyzedUrls, ({ one }) => ({
+  metadata: one(urlMetadata, {
+    fields: [analyzedUrls.id],
+    references: [urlMetadata.analyzedUrlId],
+  }),
+  content: one(urlContent, {
+    fields: [analyzedUrls.id],
+    references: [urlContent.analyzedUrlId],
+  }),
+  analytics: one(contentAnalytics, {
+    fields: [analyzedUrls.id],
+    references: [contentAnalytics.analyzedUrlId],
+  }),
+}));
+
+export const urlMetadataRelations = relations(urlMetadata, ({ one }) => ({
+  analyzedUrl: one(analyzedUrls, {
+    fields: [urlMetadata.analyzedUrlId],
+    references: [analyzedUrls.id],
+  }),
+}));
+
+export const urlContentRelations = relations(urlContent, ({ one }) => ({
+  analyzedUrl: one(analyzedUrls, {
+    fields: [urlContent.analyzedUrlId],
+    references: [analyzedUrls.id],
+  }),
+}));
+
+export const contentAnalyticsRelations = relations(contentAnalytics, ({ one }) => ({
+  analyzedUrl: one(analyzedUrls, {
+    fields: [contentAnalytics.analyzedUrlId],
+    references: [analyzedUrls.id],
+  }),
+}));

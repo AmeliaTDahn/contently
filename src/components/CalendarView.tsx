@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Calendar as BigCalendar, dateFnsLocalizer, type View, SlotInfo } from "react-big-calendar";
+import { Calendar as BigCalendar, dateFnsLocalizer, type View, SlotInfo, EventProps, CalendarProps } from "react-big-calendar";
 import withDragAndDrop from "react-big-calendar/lib/addons/dragAndDrop";
 import { format, parse, startOfWeek, getDay, addDays, addWeeks, addMonths, subDays, subWeeks, subMonths } from "date-fns";
 import { enUS } from "date-fns/locale";
@@ -9,15 +9,12 @@ import "react-big-calendar/lib/css/react-big-calendar.css";
 import "react-big-calendar/lib/addons/dragAndDrop/styles.css";
 import "@/styles/calendar.css";
 import { useAuth } from "@/lib/auth-context";
+import { SyntheticEvent } from "react";
 
 // Add custom CSS for URL events
 const customCalendarStyles = `
   .event-with-url {
     border-left: 3px solid #2563eb !important;
-  }
-  
-  .event-with-visuals {
-    border-right: 3px solid #10b981 !important;
   }
   
   .event-url {
@@ -35,15 +32,6 @@ const customCalendarStyles = `
     overflow: hidden;
     text-overflow: ellipsis;
   }
-
-  .event-visual-indicator {
-    position: absolute;
-    right: 4px;
-    top: 4px;
-    width: 16px;
-    height: 16px;
-    color: #059669;
-  }
 `;
 
 // Setup the localizer for react-big-calendar using date-fns
@@ -59,8 +47,14 @@ const localizer = dateFnsLocalizer({
   locales,
 });
 
-// Create a drag-and-drop enabled calendar
-const DragAndDropCalendar = withDragAndDrop(BigCalendar);
+// Create a properly typed DragAndDropCalendar
+const DragAndDropCalendar = withDragAndDrop<CalendarEvent>(BigCalendar);
+
+interface ContentType {
+  id: 'instagram' | 'youtube' | 'twitter' | 'blog' | 'podcast';
+  label: string;
+  color: string;
+}
 
 interface CalendarEvent {
   id: string;
@@ -70,12 +64,7 @@ interface CalendarEvent {
   description?: string;
   url?: string;
   rationale?: string;
-  contentType: string;
-  visualStrategy?: {
-    mainImage: string;
-    infographics: string[];
-    style: string;
-  };
+  contentType: ContentType['id'];
 }
 
 interface CalendarViewProps {
@@ -87,6 +76,17 @@ interface CustomToolbarProps {
   onView: (view: View) => void;
   onNavigate: (action: 'PREV' | 'NEXT' | 'TODAY') => void;
   view: View;
+}
+
+interface DragDropEventData {
+  event: CalendarEvent;
+  start: Date;
+  end: Date;
+  isAllDay?: boolean;
+}
+
+interface EventComponentProps extends EventProps<CalendarEvent> {
+  event: CalendarEvent;
 }
 
 // Custom styling for the calendar
@@ -173,6 +173,17 @@ function CustomToolbar({ label, onView, onNavigate, view }: CustomToolbarProps) 
   );
 }
 
+// Add content type options
+const contentTypes: ContentType[] = [
+  { id: 'instagram', label: 'Instagram', color: '#E1306C' },
+  { id: 'youtube', label: 'YouTube', color: '#FF0000' },
+  { id: 'twitter', label: 'Twitter', color: '#1DA1F2' },
+  { id: 'blog', label: 'Blog Post', color: '#14b8a6' },
+  { id: 'podcast', label: 'Podcast', color: '#8B5CF6' },
+];
+
+const defaultContentType: ContentType['id'] = 'blog';
+
 export default function CalendarView({ events }: CalendarViewProps) {
   const [view, setView] = useState<View>("month");
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
@@ -198,7 +209,7 @@ export default function CalendarView({ events }: CalendarViewProps) {
     setCalendarEvents(events);
   }, [events]);
 
-  const handleSelectEvent = (event: any) => {
+  const handleSelectEvent = (event: object, e: SyntheticEvent<HTMLElement>) => {
     setSelectedEvent(event as CalendarEvent);
     setShowModal(true);
   };
@@ -209,11 +220,11 @@ export default function CalendarView({ events }: CalendarViewProps) {
   };
 
   // Handle event resizing and dragging
-  const handleEventDrop = useCallback((dropInfo: any) => {
-    const { event, start, end } = dropInfo;
+  const handleEventDrop = useCallback((args: any) => {
+    const { event, start, end } = args;
     const updatedEvents = calendarEvents.map(existingEvent => 
       existingEvent.id === event.id 
-        ? { ...existingEvent, start, end } 
+        ? { ...existingEvent, start: new Date(start), end: new Date(end) } 
         : existingEvent
     );
     
@@ -222,7 +233,7 @@ export default function CalendarView({ events }: CalendarViewProps) {
     // Show a toast notification
     const toast = document.createElement('div');
     toast.className = 'event-update-toast';
-    toast.textContent = `"${event.title}" moved to ${format(start, 'PPp')}`;
+    toast.textContent = `"${event.title}" moved to ${format(new Date(start), 'PPp')}`;
     document.body.appendChild(toast);
     
     // Remove the toast after 3 seconds
@@ -234,11 +245,11 @@ export default function CalendarView({ events }: CalendarViewProps) {
     }, 3000);
   }, [calendarEvents]);
 
-  const handleEventResize = useCallback((resizeInfo: any) => {
-    const { event, start, end } = resizeInfo;
+  const handleEventResize = useCallback((args: any) => {
+    const { event, start, end } = args;
     const updatedEvents = calendarEvents.map(existingEvent => 
       existingEvent.id === event.id 
-        ? { ...existingEvent, start, end } 
+        ? { ...existingEvent, start: new Date(start), end: new Date(end) } 
         : existingEvent
     );
     
@@ -247,7 +258,7 @@ export default function CalendarView({ events }: CalendarViewProps) {
     // Show a toast notification
     const toast = document.createElement('div');
     toast.className = 'event-update-toast';
-    toast.textContent = `"${event.title}" resized to ${format(start, 'PPp')} - ${format(end, 'PPp')}`;
+    toast.textContent = `"${event.title}" resized to ${format(new Date(start), 'PPp')} - ${format(new Date(end), 'PPp')}`;
     document.body.appendChild(toast);
     
     // Remove the toast after 3 seconds
@@ -357,37 +368,39 @@ export default function CalendarView({ events }: CalendarViewProps) {
   const startAccessor = (event: object) => (event as CalendarEvent).start;
   const endAccessor = (event: object) => (event as CalendarEvent).end;
 
-  // Add content type options
-  const contentTypes = [
-    { id: 'instagram', label: 'Instagram', color: '#E1306C' },
-    { id: 'youtube', label: 'YouTube', color: '#FF0000' },
-    { id: 'twitter', label: 'Twitter', color: '#1DA1F2' },
-    { id: 'blog', label: 'Blog Post', color: '#14b8a6' },
-    { id: 'podcast', label: 'Podcast', color: '#8B5CF6' },
-  ];
-
-  const [newEvent, setNewEvent] = useState({
+  const [newEvent, setNewEvent] = useState<{
+    title: string;
+    description: string;
+    contentType: ContentType['id'];
+    start: Date;
+    end: Date;
+  }>({
     title: '',
     description: '',
-    contentType: contentTypes[0]?.id || 'blog',
+    contentType: defaultContentType,
     start: new Date(),
     end: new Date(),
   });
 
   // Update event style getter to use content type colors
-  const eventStyleGetter = (event: object) => {
-    const calendarEvent = event as CalendarEvent;
-    const style: React.CSSProperties = {
-      backgroundColor: 'white',
-      color: '#374151',
-      border: '1px solid #e5e7eb',
-      borderRadius: '0.375rem',
-      padding: '0.25rem'
-    };
-
+  const eventStyleGetter = (event: CalendarEvent, start: Date, end: Date, isSelected: boolean) => {
+    const contentType = event.contentType;
+    const typeConfig = contentTypes.find(type => type.id === contentType);
+    
     return {
-      style,
-      className: `${calendarEvent.url ? 'event-with-url' : ''}`
+      style: {
+        backgroundColor: typeConfig?.color || '#3b82f6',
+        borderRadius: '4px',
+        opacity: 0.9,
+        color: 'white',
+        border: '0',
+        display: 'block',
+        fontWeight: 500,
+        fontSize: '0.85rem',
+        cursor: 'pointer',
+        padding: '2px 4px',
+      },
+      className: `event-${contentType}`,
     };
   };
 
@@ -400,7 +413,7 @@ export default function CalendarView({ events }: CalendarViewProps) {
       start: newEvent.start,
       end: newEvent.end,
       description: newEvent.description,
-      contentType: newEvent.contentType,
+      contentType: newEvent.contentType
     };
     
     setCalendarEvents(prev => [...prev, event]);
@@ -408,7 +421,7 @@ export default function CalendarView({ events }: CalendarViewProps) {
     setNewEvent({
       title: '',
       description: '',
-      contentType: contentTypes[0]?.id || 'blog',
+      contentType: defaultContentType,
       start: new Date(),
       end: new Date(),
     });
@@ -427,32 +440,18 @@ export default function CalendarView({ events }: CalendarViewProps) {
   };
 
   // Custom event component to show URL source
-  const EventComponent = ({ event }: { event: object }) => {
-    const calendarEvent = event as CalendarEvent;
-    const hasUrl = Boolean(calendarEvent.url);
-    const hasVisuals = Boolean(calendarEvent.visualStrategy);
+  const EventComponent = ({ event, title }: EventProps<CalendarEvent>) => {
+    const typeConfig = contentTypes.find(type => type.id === event.contentType);
     
     return (
-      <div className={`h-full ${hasUrl ? 'event-with-url' : ''} ${hasVisuals ? 'event-with-visuals' : ''} relative`}>
-        <div className="event-title">{calendarEvent.title}</div>
-        {calendarEvent.url && (
-          <div className="event-url">{calendarEvent.url}</div>
-        )}
-        {hasVisuals && (
-          <svg 
-            className="event-visual-indicator" 
-            fill="none" 
-            viewBox="0 0 24 24" 
-            stroke="currentColor"
-          >
-            <path 
-              strokeLinecap="round" 
-              strokeLinejoin="round" 
-              strokeWidth={2} 
-              d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" 
-            />
-          </svg>
-        )}
+      <div 
+        title={event.description || title}
+        className="px-1 py-0.5"
+      >
+        <div className="event-title flex items-center">
+          <span className="w-2 h-2 rounded-full mr-1.5" style={{ backgroundColor: typeConfig?.color || '#3b82f6' }} />
+          {title}
+        </div>
       </div>
     );
   };
@@ -475,28 +474,13 @@ export default function CalendarView({ events }: CalendarViewProps) {
   // Add delete event handler
   const handleDeleteEvent = async (event: CalendarEvent) => {
     try {
-      const eventId = parseInt(event.id);
-      if (isNaN(eventId)) {
-        setError('Invalid event ID');
-        return;
-      }
+      // Remove event from local state
+      setCalendarEvents((currentEvents: CalendarEvent[]) => 
+        currentEvents.filter((e: CalendarEvent) => e.id !== event.id)
+      );
       
-      const response = await fetch('/api/delete-calendar-entry', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ entryId: eventId }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to delete event');
-      }
-
-      // Remove the event from the calendar
-      setCalendarEvents(prevEvents => prevEvents.filter(e => e.id !== event.id));
-      setError(null);
+      setSelectedEvent(null);
+      setShowModal(false);
 
       // Show success toast
       const toast = document.createElement('div');
@@ -509,9 +493,9 @@ export default function CalendarView({ events }: CalendarViewProps) {
           document.body.removeChild(toast);
         }, 300);
       }, 3000);
-    } catch (err) {
-      console.error('Error deleting event:', err);
-      setError(err instanceof Error ? err.message : 'An error occurred');
+    } catch (error) {
+      console.error('Error deleting event:', error);
+      setError(error instanceof Error ? error.message : 'Failed to delete event');
     }
   };
 
@@ -567,101 +551,81 @@ export default function CalendarView({ events }: CalendarViewProps) {
 
       {showModal && selectedEvent && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex justify-between items-start mb-4">
-                <h2 className="text-2xl font-semibold text-gray-900">{selectedEvent.title}</h2>
-                <button
-                  onClick={handleCloseModal}
-                  className="text-gray-400 hover:text-gray-500"
-                >
-                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-              
-              <div className="space-y-4">
-                <div>
-                  <h3 className="text-sm font-medium text-gray-500">Date & Time</h3>
-                  <p className="mt-1 text-sm text-gray-900">
-                    {format(selectedEvent.start, "PPpp")}
-                  </p>
-                </div>
-
-                <div>
-                  <h3 className="text-sm font-medium text-gray-500">Content Type</h3>
-                  <p className="mt-1 text-sm text-gray-900">{selectedEvent.contentType}</p>
-                </div>
-
-                {selectedEvent.description && (
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-500">Description</h3>
-                    <p className="mt-1 text-sm text-gray-900 whitespace-pre-wrap">
-                      {selectedEvent.description}
-                    </p>
-                  </div>
-                )}
-
-                {selectedEvent.rationale && (
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-500">Rationale</h3>
-                    <p className="mt-1 text-sm text-gray-900 whitespace-pre-wrap">
-                      {selectedEvent.rationale}
-                    </p>
-                  </div>
-                )}
-
-                {selectedEvent.visualStrategy && (
-                  <div className="border-t pt-4 mt-4">
-                    <h3 className="text-lg font-medium text-gray-900 mb-3">Visual Strategy</h3>
-                    
-                    <div className="space-y-4">
-                      <div>
-                        <h4 className="text-sm font-medium text-gray-500">Main Image</h4>
-                        <ul className="mt-2 list-disc pl-5 text-sm text-gray-900">
-                          <li>{selectedEvent.visualStrategy.mainImage}</li>
-                        </ul>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {selectedEvent.url && (
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-500">Reference URL</h3>
-                    <a
-                      href={selectedEvent.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mt-1 text-sm text-blue-600 hover:text-blue-800 break-all"
-                    >
-                      {selectedEvent.url}
-                    </a>
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-6 flex justify-end space-x-3">
-                <button
-                  onClick={handleCloseModal}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
-                  Close
-                </button>
-                <button
-                  onClick={() => {
-                    if (selectedEvent) {
-                      handleDeleteEvent(selectedEvent);
-                      handleCloseModal();
-                    }
-                  }}
-                  className="px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
-                >
-                  Delete
-                </button>
-              </div>
+          <div className="bg-white rounded-lg p-6 max-w-lg w-full">
+            <div className="flex justify-between items-start mb-4">
+              <h3 className="text-xl font-semibold text-gray-900">{selectedEvent.title}</h3>
+              <button
+                onClick={handleCloseModal}
+                className="text-gray-400 hover:text-gray-500"
+              >
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
+            
+            <div className="space-y-4">
+              {/* Date and Time */}
+              <div className="text-sm text-gray-600">
+                {format(selectedEvent.start, 'EEEE, MMMM d, yyyy')} at {format(selectedEvent.start, 'h:mm a')}
+              </div>
+
+              {/* Description Section */}
+              {selectedEvent.description && (
+                <div>
+                  <h4 className="text-sm font-medium text-gray-700 mb-1">Description</h4>
+                  <p className="text-gray-600 text-sm whitespace-pre-wrap">{selectedEvent.description}</p>
+                </div>
+              )}
+
+              {/* Rationale Section */}
+              {selectedEvent.rationale && (
+                <div>
+                  <h4 className="text-sm font-medium text-gray-700 mb-1">Rationale</h4>
+                  <p className="text-gray-600 text-sm whitespace-pre-wrap">{selectedEvent.rationale}</p>
+                </div>
+              )}
+
+              {/* URL Link */}
+              {selectedEvent.url && (
+                <div className="pt-2">
+                  <a
+                    href={selectedEvent.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center text-sm text-teal-600 hover:text-teal-700"
+                  >
+                    <span>View Content</span>
+                    <svg className="ml-1 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                  </a>
+                </div>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200">
+              <button
+                onClick={() => handleDeleteEvent(selectedEvent)}
+                className="inline-flex items-center px-4 py-2 border border-red-300 text-sm font-medium rounded-md text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+              >
+                Delete Event
+              </button>
+              <button
+                onClick={handleCloseModal}
+                className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500"
+              >
+                Close
+              </button>
+            </div>
+
+            {/* Error Message */}
+            {error && (
+              <div className="mt-4 text-sm text-red-600">
+                {error}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -669,7 +633,7 @@ export default function CalendarView({ events }: CalendarViewProps) {
       {/* New Event Modal */}
       {showNewEventModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-lg p-6 max-w-lg w-full">
             <div className="flex justify-between items-start mb-6">
               <h3 className="text-xl font-semibold text-gray-900">Add New Content</h3>
               <button
@@ -692,7 +656,10 @@ export default function CalendarView({ events }: CalendarViewProps) {
                   required
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 sm:text-sm"
                   value={newEvent.contentType}
-                  onChange={(e) => setNewEvent({ ...newEvent, contentType: e.target.value })}
+                  onChange={(e) => {
+                    const value = e.target.value as ContentType['id'];
+                    setNewEvent({ ...newEvent, contentType: value });
+                  }}
                 >
                   {contentTypes.map(type => (
                     <option key={type.id} value={type.id}>{type.label}</option>

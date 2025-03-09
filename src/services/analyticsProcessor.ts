@@ -1,7 +1,5 @@
 import { contentAnalytics } from "@/server/db/schema";
-import type { InferSelectModel } from "drizzle-orm";
-
-type ContentAnalytics = InferSelectModel<typeof contentAnalytics>;
+import type { ContentAnalytics } from "@/types/analytics";
 
 // Types for content calendar generation
 export interface ContentPerformanceMetrics {

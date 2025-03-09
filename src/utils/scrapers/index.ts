@@ -52,11 +52,14 @@ export interface ScraperResult {
  */
 export const scrapeContent = async (url: string, method: ScraperMethod = 'serverless'): Promise<ScraperResult> => {
   try {
+    let rawResult: any;
     switch (method) {
       case 'puppeteer':
-        return await scrapePuppeteer(url);
+        rawResult = await scrapePuppeteer(url);
+        break;
       case 'serverless':
-        return await scrapeServerless(url);
+        rawResult = await scrapeServerless(url);
+        break;
       default:
         return {
           error: {
@@ -65,6 +68,30 @@ export const scrapeContent = async (url: string, method: ScraperMethod = 'server
           }
         };
     }
+
+    const normalizedResult: ScraperResult = {
+      error: rawResult.error,
+      content: rawResult.content
+        ? {
+            metadata: {
+              title: rawResult.content.metadata?.title ?? '',
+              description: rawResult.content.metadata?.description ?? '',
+              keywords: Array.isArray(rawResult.content.metadata?.keywords) ? rawResult.content.metadata.keywords : [],
+              author: rawResult.content.metadata?.author ?? '',
+              ogImage: rawResult.content.metadata?.ogImage ?? ''
+            },
+            headings: rawResult.content.headings ?? { h1Tags: [], headings: [] },
+            links: rawResult.content.links ?? [],
+            images: rawResult.content.images ?? [],
+            tables: rawResult.content.tables ?? [],
+            structuredData: rawResult.content.structuredData ?? [],
+            mainContent: rawResult.content.mainContent ?? '',
+            screenshot: rawResult.content.screenshot
+          }
+        : undefined
+    };
+
+    return normalizedResult;
   } catch (error) {
     if (error instanceof Error) {
       console.error('Error scraping content:', error);

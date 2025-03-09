@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import { type AnalyticsResult, type EngagementMetrics } from '@/app/api/analyze-content/route';
+import { env } from '@/env';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -532,117 +533,97 @@ export async function predictEngagementMetrics(
   }
 }
 
-interface CalendarGenerationResponse {
-  events: Array<{
+interface AnalysisData {
+  new_content_ideas: Array<{
+    topic: string;
+    content_type: string | null;
+    priority: number;
+    reason: string;
+  }>;
+  refresh_tasks: Array<{
     title: string;
-    description: string;
-    start: string;
-    end: string;
-    content_type: string;
-    action: string;
-    rationale: {
-      strategic_timing: string;
-      audience_benefit: string;
-      platform_specific: string;
-      content_strategy: string;
-      content_guidelines: string[];
-      key_points: string[];
-    };
+    updates: string;
+    priority: number;
+    metric: string;
   }>;
 }
 
+interface CalendarEntry {
+  date: string;
+  content_type: string;
+  topic: string;
+  description: string;
+  rationale: {
+    strategic_timing: string;
+    audience_benefit: string;
+    platform_specific: string;
+    content_strategy: string;
+  };
+}
+
 export async function generateCalendarWithAI(
-  analysisData: {
-    new_content_ideas: Array<{
-      topic: string;
-      content_type: string | null;
-      priority: number;
-      reason: string;
-    }>;
-    refresh_tasks: Array<{
-      title: string;
-      updates: string;
-      priority: number;
-      metric: string;
-    }>;
-  },
-  startDate: string,
-  durationMonths: number,
+  analysis_data: AnalysisData,
+  start_date: string,
+  duration_months: number,
   cadence: 'weekly' | 'biweekly' | 'monthly' = 'weekly'
-): Promise<CalendarGenerationResponse> {
-  const prompt = `
-    As an expert content strategist, create a detailed content calendar based on the following inputs:
-
-    Content Ideas:
-    ${analysisData.new_content_ideas.map(idea => `
-    - Topic: ${idea.topic}
-      Type: ${idea.content_type || 'Any'}
-      Priority: ${idea.priority}
-      Reason: ${idea.reason}
-    `).join('\n')}
-
-    Content Refresh Tasks:
-    ${analysisData.refresh_tasks.map(task => `
-    - Title: ${task.title}
-      Updates: ${task.updates}
-      Priority: ${task.priority}
-      Metric: ${task.metric}
-    `).join('\n')}
-
-    Parameters:
-    - Start Date: ${startDate}
-    - Duration: ${durationMonths} months
-    - Publishing Cadence: ${cadence}
-
-    Create a content calendar that:
-    1. Prioritizes high-priority content and refresh tasks
-    2. Distributes content evenly across the specified duration
-    3. Follows the specified publishing cadence
-    4. Provides detailed rationale for timing and strategic decisions
-    5. Includes specific content guidelines and key points for each item
-
-    Return the response as a JSON object with an "events" array, where each event has:
-    - title: string
-    - description: string
-    - start: string (YYYY-MM-DD format)
-    - end: string (YYYY-MM-DD format)
-    - content_type: string
-    - action: string ('new' or 'refresh')
-    - rationale: {
-        strategic_timing: string
-        audience_benefit: string
-        platform_specific: string
-        content_strategy: string
-        content_guidelines: string[]
-        key_points: string[]
-      }
-  `;
-
+): Promise<CalendarEntry[]> {
   try {
+    const prompt = `Generate a content calendar based on the following analysis:
+
+Content Ideas:
+${analysis_data.new_content_ideas.map(idea => `- ${idea.topic} (${idea.content_type || 'General'}) - Priority: ${idea.priority}, Reason: ${idea.reason}`).join('\n')}
+
+Content to Refresh:
+${analysis_data.refresh_tasks.map(task => `- ${task.title} - Updates: ${task.updates}, Metric to Improve: ${task.metric}`).join('\n')}
+
+Parameters:
+- Start Date: ${start_date}
+- Duration: ${duration_months} months
+- Posting Cadence: ${cadence}
+
+Please create a content calendar that:
+1. Prioritizes high-priority content ideas
+2. Distributes refresh tasks evenly
+3. Maintains consistent posting frequency
+4. Includes strategic timing rationale
+5. Provides clear audience benefits
+6. Considers platform-specific requirements
+7. Aligns with overall content strategy
+
+Return the response as a JSON array of calendar entries, each containing:
+- date (YYYY-MM-DD format)
+- content_type (string)
+- topic (string)
+- description (string)
+- rationale (object with strategic_timing, audience_benefit, platform_specific, and content_strategy)`;
+
     const completion = await openai.chat.completions.create({
-      model: "gpt-4-turbo-preview",
+      model: 'gpt-4-turbo-preview',
       messages: [
         {
-          role: "system",
-          content: "You are an expert content strategist creating a detailed content calendar. Focus on strategic timing, audience benefits, and platform-specific considerations. Provide specific, actionable content guidelines and key points for each item."
+          role: 'system',
+          content: 'You are an AI content strategist tasked with creating an optimized content calendar. Return the response as a JSON array of calendar entries.'
         },
-        {
-          role: "user",
-          content: prompt
-        }
+        { role: 'user', content: prompt }
       ],
-      response_format: { type: "json_object" },
+      response_format: { type: 'json_object' },
       temperature: 0.7,
     });
 
-    if (!completion.choices[0]?.message?.content) {
+    const responseContent = completion.choices[0]?.message?.content;
+    if (!responseContent) {
       throw new Error('No response from OpenAI');
     }
 
-    const calendar = JSON.parse(completion.choices[0].message.content) as CalendarGenerationResponse;
-    return calendar;
+    const parsedResponse = JSON.parse(responseContent);
+    
+    if (!Array.isArray(parsedResponse.calendar)) {
+      throw new Error('Invalid response format from OpenAI');
+    }
+
+    return parsedResponse.calendar;
   } catch (error) {
-    console.error('Error generating content calendar:', error);
-    throw error;
+    console.error('Error generating calendar with OpenAI:', error);
+    throw new Error(error instanceof Error ? error.message : 'Failed to generate calendar');
   }
 } 

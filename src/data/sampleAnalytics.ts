@@ -45,7 +45,14 @@ export const sampleAnalytics: ExtendedAnalytics = {
       clarity: 90,
       structure: 88,
       vocabulary: 92,
-      overall: 91
+      overall: 91,
+      explanations: {
+        grammar: "Excellent grammar usage throughout",
+        clarity: "Very clear and concise writing",
+        structure: "Well-organized content structure",
+        vocabulary: "Professional and appropriate vocabulary",
+        overall: "High-quality writing overall"
+      }
     },
     audienceLevel: "Intermediate",
     contentType: "Blog Post",
@@ -65,14 +72,15 @@ export const sampleAnalytics: ExtendedAnalytics = {
         count: 6
       },
       {
-        text: "analytics",
+        text: "content writing",
         count: 5
       }
     ],
     keywordAnalysis: {
-      distribution: "Well-balanced keyword distribution across the content",
-      overused: ["content strategy"],
-      underused: ["marketing ROI", "content metrics"]
+      distribution: "Well-balanced",
+      overused: [],
+      underused: ["marketing automation", "content calendar"],
+      explanation: "Good keyword distribution with room for additional terms"
     },
     engagement: {
       likes: 245,
@@ -82,62 +90,57 @@ export const sampleAnalytics: ExtendedAnalytics = {
       totalViews: 3500,
       uniqueViews: 2800,
       avgTimeOnPage: 4.5,
-      bounceRate: 0.25,
+      bounceRate: 25,
       socialShares: {
         facebook: 85,
         twitter: 120,
         linkedin: 95,
         pinterest: 15
+      },
+      explanations: {
+        likes: "Strong engagement through likes",
+        comments: "Active discussion in comments",
+        shares: "Good social sharing activity",
+        bookmarks: "Content worth saving for later",
+        totalViews: "High overall viewership",
+        uniqueViews: "Strong unique visitor count",
+        avgTimeOnPage: "Good time spent reading",
+        bounceRate: "Low bounce rate indicates engagement",
+        socialShares: "Well-distributed social sharing"
       }
     }
   },
   stats: {
     wordCountStats: {
-      count: 5454,
-      min: 0.0,
-      max: 6621.0,
-      avg: 608.0913091309131,
-      sum: 3316530.0
+      count: 1500,
+      min: 1200,
+      max: 1800,
+      avg: 1500,
+      sum: 15000,
+      explanations: {
+        count: "Total word count analysis",
+        min: "Minimum word count analysis",
+        max: "Maximum word count analysis",
+        avg: "Average word count analysis",
+        sum: "Total words across all articles"
+      }
     },
     articlesPerMonth: [
       {
-        date: "2024-03-01T00:00:00.000Z",
-        count: 8
+        date: "2024-01",
+        count: 4,
+        explanation: "January 2024 article count"
       },
       {
-        date: "2024-02-01T00:00:00.000Z",
-        count: 2
+        date: "2024-02",
+        count: 5,
+        explanation: "February 2024 article count"
       },
       {
-        date: "2024-01-01T00:00:00.000Z",
-        count: 1
+        date: "2024-03",
+        count: 6,
+        explanation: "March 2024 article count"
       }
-    ]
-  },
-  articles: {
-    total: 11,
-    articles: [
-      {
-        id: "1",
-        wordCount: 1200,
-        keywords: ["content strategy", "digital marketing", "SEO"],
-        createdAt: "2024-03-15T10:00:00.000Z",
-        title: "The Ultimate Guide to Content Strategy",
-        url: "/blog/ultimate-guide-content-strategy"
-      },
-      {
-        id: "2",
-        wordCount: 800,
-        keywords: ["social media", "engagement", "marketing"],
-        createdAt: "2024-03-10T14:30:00.000Z",
-        title: "Boosting Social Media Engagement",
-        url: "/blog/boosting-social-media-engagement"
-      }
-    ],
-    urlPatterns: [
-      "/blog/*",
-      "/articles/*",
-      "/resources/*"
     ]
   }
 }; 

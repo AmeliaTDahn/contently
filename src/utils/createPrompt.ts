@@ -16,7 +16,7 @@ export function createCalendarPrompt(
       topTopics: string[];
       globalInsights: {
         bestDayOfWeek: string;
-        optimalLength: number;
+        optimalLength: string;
         mostEngagingTone: string;
         audiencePreferences: {
           level: string;
@@ -140,7 +140,6 @@ For each post, provide:
 - Topic (must be directly related to analyzed content)
 - Description (provide a comprehensive 3-4 sentence explanation including: main points to cover, target audience takeaways, suggested content structure, and any specific examples or case studies to include)
 - Rationale (write a detailed 3-4 sentence explanation that references: specific analyzed URLs that inspired this content, performance metrics that support this choice, identified content gaps this fills, and how it aligns with audience preferences)
-- Visual Strategy (provide 3-4 specific suggestions for visuals including: recommended type of images/graphics, key data points to visualize, suggested infographic elements, and any interactive components. Be specific about the style and content of each visual)
 
 Example format (adjust topics to match your actual analyzed content):
 {
@@ -150,16 +149,7 @@ Example format (adjust topics to match your actual analyzed content):
       "contentType": "blog",
       "topic": "Advanced Content Optimization Techniques for E-commerce Pages",
       "description": "A comprehensive guide that walks through advanced optimization strategies for e-commerce product pages and category listings. The content will cover key areas including metadata optimization, schema markup implementation, and content hierarchy best practices with real examples from successful e-commerce sites. Readers will learn how to implement these techniques through step-by-step instructions and receive a downloadable checklist for optimizing their own pages.",
-      "rationale": "This topic builds upon our existing content optimization guide (URL #3) which has shown high engagement (85% read-through rate) but lacked e-commerce-specific examples. Analytics show our e-commerce-related content consistently outperforms other topics with 2.3x higher conversion rates. This fills a significant content gap in our technical SEO coverage and aligns with our audience's demonstrated interest in actionable, industry-specific optimization techniques.",
-      "visualStrategy": {
-        "mainImage": "Hero image showing before/after comparison of an optimized e-commerce product page with key optimization elements highlighted",
-        "infographics": [
-          "Flow diagram showing the step-by-step optimization process with icons for each major step",
-          "Interactive comparison tool showing good vs. poor examples of product page optimization",
-          "Data visualization showing impact of optimization on key metrics (conversion rate, time on page, bounce rate)"
-        ],
-        "style": "Clean, modern design with branded color scheme. Use minimal, flat design for diagrams and charts. Include annotated screenshots for real-world examples."
-      }
+      "rationale": "This topic builds upon our existing content optimization guide (URL #3) which has shown high engagement (85% read-through rate) but lacked e-commerce-specific examples. Analytics show our e-commerce-related content consistently outperforms other topics with 2.3x higher conversion rates. This fills a significant content gap in our technical SEO coverage and aligns with our audience's demonstrated interest in actionable, industry-specific optimization techniques."
     }
   ]
 }

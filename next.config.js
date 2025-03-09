@@ -23,6 +23,26 @@ const nextConfig = {
       }
     ],
   },
+  experimental: {
+    // Enable optimizations
+    optimizeCss: true,
+    optimizePackageImports: ['@headlessui/react', '@heroicons/react', 'lucide-react'],
+    // Improve page load performance
+    nextScriptWorkers: true,
+  },
+  // Optimize loading of CSS
+  webpack: (config, { dev, isServer }) => {
+    // Optimize CSS only in production and for client-side bundles
+    if (!dev && !isServer) {
+      config.optimization.splitChunks.cacheGroups.styles = {
+        name: 'styles',
+        test: /\.(css|scss)$/,
+        chunks: 'all',
+        enforce: true,
+      };
+    }
+    return config;
+  },
 }
 
 export default nextConfig;

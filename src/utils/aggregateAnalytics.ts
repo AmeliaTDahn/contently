@@ -1,9 +1,6 @@
 import { db } from '@/lib/db';
 import { eq, inArray } from 'drizzle-orm';
 import { analyzedUrls, contentAnalytics } from '@/lib/schema';
-import type { InferSelectModel } from 'drizzle-orm';
-
-type ContentAnalytics = InferSelectModel<typeof contentAnalytics>;
 
 interface AggregatedAnalytics {
   contentTypeStats: Record<
@@ -22,7 +19,7 @@ interface AggregatedAnalytics {
   topTopics: string[];
   globalInsights: {
     bestDayOfWeek: string;
-    optimalLength: number;
+    optimalLength: string;
     mostEngagingTone: string;
     audiencePreferences: {
       level: string;
@@ -46,17 +43,6 @@ interface AggregatedAnalytics {
   };
 }
 
-interface ContentTypeStats {
-  count: number;
-  engagementSum: number;
-  readabilitySum: number;
-  seoSum: number;
-  topics: Map<string, { count: number; engagement: number }>;
-  timeSlots: Map<number, { count: number; engagement: number }>;
-  audienceLevels: Map<string, number>;
-  tones: Map<string, number>;
-}
-
 export async function aggregateUserAnalytics(userId: string): Promise<AggregatedAnalytics> {
   // Fetch all analyzed URLs for the user
   const userUrls = await db
@@ -74,7 +60,7 @@ export async function aggregateUserAnalytics(userId: string): Promise<Aggregated
     .from(contentAnalytics)
     .where(inArray(contentAnalytics.analyzedUrlId, userUrls.map((u) => u.id)));
 
-  const contentTypeStats: Record<string, ContentTypeStats> = {};
+  const contentTypeStats: Record<string, any> = {};
   const allTopics: string[] = [];
   const engagementByTime: Record<string, number> = {};
   const engagementByDay: Record<string, number> = {};
@@ -113,12 +99,10 @@ export async function aggregateUserAnalytics(userId: string): Promise<Aggregated
     if (analytic.topics && Array.isArray(analytic.topics)) {
       allTopics.push(...analytic.topics);
       for (const topic of analytic.topics) {
-        if (typeof topic === 'string') {
-          const topicStats = stats.topics.get(topic) || { count: 0, engagement: 0 };
-          topicStats.count++;
-          topicStats.engagement += analytic.engagementScore;
-          stats.topics.set(topic, topicStats);
-        }
+        const topicStats = stats.topics.get(topic) || { count: 0, engagement: 0 };
+        topicStats.count++;
+        topicStats.engagement += analytic.engagementScore;
+        stats.topics.set(topic, topicStats);
       }
     }
 
@@ -126,11 +110,8 @@ export async function aggregateUserAnalytics(userId: string): Promise<Aggregated
     const timeKey = `${hour}:00`;
     engagementByTime[timeKey] = (engagementByTime[timeKey] || 0) + analytic.engagementScore;
     
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
-    const dayKey = days[day];
-    if (dayKey) {
-      engagementByDay[dayKey] = (engagementByDay[dayKey] || 0) + analytic.engagementScore;
-    }
+    const dayKey = (['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][day])!;
+    engagementByDay[dayKey] = (engagementByDay[dayKey] || 0) + analytic.engagementScore;
 
     // Track length-based engagement
     const lengthKey = wordCount < 500 ? 'short' : wordCount < 1500 ? 'medium' : 'long';
@@ -154,12 +135,10 @@ export async function aggregateUserAnalytics(userId: string): Promise<Aggregated
     if (analytic.keywords && Array.isArray(analytic.keywords)) {
       for (const kw of analytic.keywords) {
         const keyword = typeof kw === 'string' ? kw : kw.text;
-        if (keyword) {
-          const existing = keywordStats.get(keyword) || { count: 0, engagement: 0 };
-          existing.count++;
-          existing.engagement += analytic.engagementScore;
-          keywordStats.set(keyword, existing);
-        }
+        const existing = keywordStats.get(keyword) || { count: 0, engagement: 0 };
+        existing.count++;
+        existing.engagement += analytic.engagementScore;
+        keywordStats.set(keyword, existing);
       }
     }
   }
@@ -168,8 +147,8 @@ export async function aggregateUserAnalytics(userId: string): Promise<Aggregated
     contentTypeStats: processContentTypeStats(contentTypeStats),
     topTopics: getTopTopics(allTopics),
     globalInsights: {
-      bestDayOfWeek: getBestPerforming<string>(engagementByDay),
-      optimalLength: getBestPerforming<number>(engagementByLength, 'number'),
+      bestDayOfWeek: getBestPerforming(engagementByDay),
+      optimalLength: getBestPerforming(engagementByLength),
       mostEngagingTone: getMostCommonTone(contentTypeStats),
       audiencePreferences: getAudiencePreferences(contentTypeStats),
       contentGaps: identifyContentGaps(contentTypeStats, allTopics),
@@ -190,12 +169,9 @@ function getEmptyAnalytics(): AggregatedAnalytics {
     topTopics: [],
     globalInsights: {
       bestDayOfWeek: '',
-      optimalLength: 1000,
+      optimalLength: '',
       mostEngagingTone: '',
-      audiencePreferences: {
-        level: '',
-        interests: [],
-      },
+      audiencePreferences: { level: '', interests: [] },
       contentGaps: [],
       seasonalTrends: [],
     },
@@ -212,18 +188,30 @@ function getEmptyAnalytics(): AggregatedAnalytics {
   };
 }
 
-function processContentTypeStats(rawStats: Record<string, ContentTypeStats>) {
+function processContentTypeStats(rawStats: Record<string, any>) {
   const processed: AggregatedAnalytics['contentTypeStats'] = {};
-
-  for (const [type, stats] of Object.entries(rawStats)) {
+  
+  for (const [type, stats] of Object.entries(rawStats) as [
+    string,
+    { 
+      count: number;
+      engagementSum: number;
+      readabilitySum: number;
+      seoSum: number;
+      topics: Map<string, { count: number; engagement: number }>;
+      timeSlots: Map<number, { count: number; engagement: number }>;
+      audienceLevels: Map<string, number>;
+      tones: Map<string, number>;
+    }
+  ][]) {
     const bestTopics = Array.from(stats.topics.entries())
-      .sort((a, b) => b[1].engagement / b[1].count - a[1].engagement / a[1].count)
+      .sort((a: [string, { count: number; engagement: number }], b: [string, { count: number; engagement: number }]) => (b[1].engagement / b[1].count) - (a[1].engagement / a[1].count))
       .slice(0, 3)
       .map(([topic]) => topic);
 
-    const bestTimeSlot = Array.from(stats.timeSlots.entries())
-      .sort((a, b) => b[1].engagement / b[1].count - a[1].engagement / a[1].count)
-      .map(([hour]) => hour.toString().padStart(2, '0') + ':00')[0] || '09:00';
+    const bestTime = Array.from(stats.timeSlots.entries())
+      .sort((a: [number, { count: number; engagement: number }], b: [number, { count: number; engagement: number }]) => (b[1].engagement / b[1].count) - (a[1].engagement / a[1].count))
+      .map(([hour]) => `${hour}:00`)[0] || '';
 
     processed[type] = {
       count: stats.count,
@@ -231,159 +219,114 @@ function processContentTypeStats(rawStats: Record<string, ContentTypeStats>) {
       avgReadability: stats.readabilitySum / stats.count,
       avgSeo: stats.seoSum / stats.count,
       bestPerformingTopics: bestTopics,
-      bestTimeOfDay: bestTimeSlot,
-      audienceLevel: getBestPerforming(stats.audienceLevels) || 'General',
-      tone: getBestPerforming(stats.tones) || 'Neutral',
+      bestTimeOfDay: bestTime,
+      audienceLevel: getBestPerforming(stats.audienceLevels),
+      tone: getBestPerforming(stats.tones),
     };
   }
-
+  
   return processed;
 }
 
 function getTopTopics(topics: string[]): string[] {
-  const topicCounts = topics.reduce((acc, topic) => {
-    acc.set(topic, (acc.get(topic) || 0) + 1);
+  const counts = topics.reduce((acc, topic) => {
+    acc[topic] = (acc[topic] || 0) + 1;
     return acc;
-  }, new Map<string, number>());
-
-  return Array.from(topicCounts.entries())
+  }, {} as Record<string, number>);
+  
+  return Object.entries(counts)
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 10)
+    .slice(0, 5)
     .map(([topic]) => topic);
 }
 
-function getBestPerforming<T extends string | number>(stats: Record<string, number> | Map<string, number>, returnType: 'string' | 'number' = 'string'): T {
-  if (stats instanceof Map) {
-    const entries = Array.from(stats.entries());
-    if (entries.length === 0) return (returnType === 'string' ? '' : 0) as T;
-    const sorted = entries.sort((a, b) => b[1] - a[1]);
-    const value = sorted[0]?.[returnType === 'string' ? 0 : 1];
-    return (value ?? (returnType === 'string' ? '' : 0)) as T;
-  }
-  const entries = Object.entries(stats);
-  if (entries.length === 0) return (returnType === 'string' ? '' : 0) as T;
-  const sorted = entries.sort((a, b) => b[1] - a[1]);
-  const value = sorted[0]?.[returnType === 'string' ? 0 : 1];
-  return (value ?? (returnType === 'string' ? '' : 0)) as T;
+function getBestPerforming(stats: Record<string, number> | Map<string, number>): string {
+  const entries = stats instanceof Map ? Array.from(stats.entries()) : Object.entries(stats);
+  return entries.sort((a, b) => b[1] - a[1])[0]?.[0] || '';
 }
 
-function getMostCommonTone(contentTypeStats: Record<string, ContentTypeStats>): string {
-  const allTones = new Map<string, number>();
+function getMostCommonTone(contentTypeStats: Record<string, any>): string {
+  const tones = new Map<string, number>();
   for (const stats of Object.values(contentTypeStats)) {
-    for (const [tone, count] of stats.tones) {
-      allTones.set(tone, (allTones.get(tone) || 0) + count);
+    for (const [tone, count] of stats.tones.entries()) {
+      tones.set(tone, (tones.get(tone) || 0) + count);
     }
   }
-  return getBestPerforming(allTones);
+  return getBestPerforming(tones);
 }
 
-function getAudiencePreferences(contentTypeStats: Record<string, ContentTypeStats>) {
-  const allLevels = new Map<string, number>();
-  const allTopics = new Map<string, number>();
-
+function getAudiencePreferences(contentTypeStats: Record<string, any>) {
+  const levels = new Map<string, number>();
+  const interests = new Set<string>();
+  
   for (const stats of Object.values(contentTypeStats)) {
-    for (const [level, count] of stats.audienceLevels) {
-      allLevels.set(level, (allLevels.get(level) || 0) + count);
+    for (const [level, count] of stats.audienceLevels.entries()) {
+      levels.set(level, (levels.get(level) || 0) + count);
     }
-    for (const [topic, { count }] of stats.topics) {
-      allTopics.set(topic, (allTopics.get(topic) || 0) + count);
+    for (const [topic] of stats.topics.entries()) {
+      interests.add(topic);
     }
   }
-
+  
   return {
-    level: getBestPerforming<string>(allLevels),
-    interests: Array.from(allTopics.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([topic]) => topic),
+    level: getBestPerforming(levels),
+    interests: Array.from(interests).slice(0, 5),
   };
 }
 
-function identifyContentGaps(contentTypeStats: Record<string, ContentTypeStats>, allTopics: string[]): string[] {
+function identifyContentGaps(contentTypeStats: Record<string, any>, allTopics: string[]): string[] {
+  const gaps: string[] = [];
   const topicCounts = new Map<string, number>();
+  
   for (const topic of allTopics) {
     topicCounts.set(topic, (topicCounts.get(topic) || 0) + 1);
   }
-
-  return Array.from(topicCounts.entries())
-    .filter(([_, count]) => count < 3)
-    .map(([topic]) => topic)
-    .slice(0, 5);
+  
+  // Find underrepresented topics
+  for (const [topic, count] of topicCounts.entries()) {
+    if (count < 3) { // Arbitrary threshold
+      gaps.push(topic);
+    }
+  }
+  
+  return gaps.slice(0, 5);
 }
 
-function analyzeSeasonalTrends(analytics: ContentAnalytics[]): Array<{ season: string; topics: string[] }> {
-  const seasonalTopics = new Map<string, Map<string, number>>();
-  const seasons = ['Spring', 'Summer', 'Fall', 'Winter'] as const;
-
+function analyzeSeasonalTrends(analytics: any[]): Array<{ season: string; topics: string[] }> {
+  const seasonalTopics = new Map<string, Set<string>>();
+  const seasons = ['Winter', 'Spring', 'Summer', 'Fall'];
+  
   for (const analytic of analytics) {
-    if (!analytic.createdAt) continue;
-
     const date = new Date(analytic.createdAt);
     const month = date.getMonth();
-    const seasonIndex = Math.floor(month / 3) % 4;
-    const season = seasons[seasonIndex];
+    const season = seasons[Math.floor(month / 3)]!;
     
-    if (!season) continue; // Skip if season is undefined
-
     if (!seasonalTopics.has(season)) {
-      seasonalTopics.set(season, new Map());
+      seasonalTopics.set(season, new Set());
     }
-
-    const topicsForSeason = seasonalTopics.get(season);
-    if (topicsForSeason && analytic.topics && Array.isArray(analytic.topics)) {
+    
+    if (analytic.topics && Array.isArray(analytic.topics)) {
       for (const topic of analytic.topics) {
         if (typeof topic === 'string') {
-          topicsForSeason.set(topic, (topicsForSeason.get(topic) || 0) + 1);
+          seasonalTopics.get(season)!.add(topic);
         }
       }
     }
   }
-
-  const result: Array<{ season: string; topics: string[] }> = [];
-  for (const [season, topics] of seasonalTopics.entries()) {
-    const topicList = Array.from(topics.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([topic]) => topic);
-
-    result.push({
-      season: season as string,
-      topics: topicList,
-    });
-  }
-
-  return result;
+  
+  return Array.from(seasonalTopics.entries()).map(([season, topics]) => ({
+    season,
+    topics: Array.from(topics).slice(0, 3),
+  }));
 }
 
 function analyzeKeywords(keywordStats: Map<string, { count: number; engagement: number }>) {
-  const entries = Array.from(keywordStats.entries());
-  if (entries.length === 0) {
-    return {
-      trending: [],
-      underutilized: [],
-      overused: [],
-    };
-  }
-
-  const avgEngagement = entries.reduce((sum, [_, stats]) => sum + stats.engagement / stats.count, 0) / entries.length;
-
-  const trending = entries
-    .filter(([_, stats]) => stats.engagement / stats.count > avgEngagement * 1.2)
-    .sort((a, b) => b[1].engagement / b[1].count - a[1].engagement / a[1].count)
-    .slice(0, 5)
-    .map(([keyword]) => keyword);
-
-  const underutilized = entries
-    .filter(([_, stats]) => stats.count < 3 && stats.engagement / stats.count > avgEngagement)
-    .sort((a, b) => b[1].engagement / b[1].count - a[1].engagement / a[1].count)
-    .slice(0, 5)
-    .map(([keyword]) => keyword);
-
-  const overused = entries
-    .filter(([_, stats]) => stats.count > 5 && stats.engagement / stats.count < avgEngagement * 0.8)
-    .sort((a, b) => a[1].engagement / a[1].count - b[1].engagement / b[1].count)
-    .slice(0, 5)
-    .map(([keyword]) => keyword);
-
-  return { trending, underutilized, overused };
+  const sorted = Array.from(keywordStats.entries())
+    .sort((a, b) => (b[1].engagement / b[1].count) - (a[1].engagement / a[1].count));
+  
+  return {
+    trending: sorted.slice(0, 5).map(([kw]) => kw),
+    underutilized: sorted.filter(([, stats]) => stats.count < 3).slice(0, 5).map(([kw]) => kw),
+    overused: sorted.filter(([, stats]) => stats.count > 10).slice(0, 5).map(([kw]) => kw),
+  };
 }
