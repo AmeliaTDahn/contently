@@ -219,14 +219,18 @@ export const ContentAnalytics: React.FC = () => {
         body: JSON.stringify({ url }),
       });
 
-      const data = await response.json() as ApiResponse;
+      const data = await response.json();
       
       // If the response was very fast (less than 1 second), it likely came from cache
       const responseTime = Date.now() - startTime;
       setLoadedFromCache(responseTime < 1000);
 
       if (!response.ok) {
-        throw new Error(data.error?.message ?? 'Failed to analyze content');
+        let errorMessage = data.error || 'Failed to analyze content';
+        if (response.status === 408) {
+          errorMessage = 'The analysis took too long. Please try a shorter article or try again later.';
+        }
+        throw new Error(errorMessage);
       }
 
       if (!data.data) {
@@ -250,6 +254,7 @@ export const ContentAnalytics: React.FC = () => {
         }, 500); // Small delay between analyses
       }
     } catch (err) {
+      console.error('Analysis error:', err);
       setError(err instanceof Error ? err.message : 'An unexpected error occurred');
       setResult(null);
       

@@ -317,59 +317,67 @@ export async function POST(req: Request) {
       );
     }
 
-    // Analyze the content using OpenAI with timeout
-    const analysis = await Promise.race([
-      analyzeContentWithAI({
-        content: scrapedResult.content.mainContent || '',
-        title: scrapedResult.content.metadata.title || '',
-        metadata: {
-          description: scrapedResult.content.metadata.description || '',
-          keywords: scrapedResult.content.metadata.keywords || [],
-          author: scrapedResult.content.metadata.author || ''
-        }
-      }),
-      new Promise<Partial<AnalyticsResult>>((_, reject) => {
-        setTimeout(() => {
-          reject(new Error('Content analysis timed out. Please try again with a shorter article.'));
-        }, 45000); // Timeout before Vercel's limit
-      })
-    ]);
+    try {
+      // Analyze the content using OpenAI with timeout
+      const analysis = await Promise.race([
+        analyzeContentWithAI({
+          content: scrapedResult.content.mainContent || '',
+          title: scrapedResult.content.metadata.title || '',
+          metadata: {
+            description: scrapedResult.content.metadata.description || '',
+            keywords: scrapedResult.content.metadata.keywords || [],
+            author: scrapedResult.content.metadata.author || ''
+          }
+        }),
+        new Promise<Partial<AnalyticsResult>>((_, reject) => {
+          setTimeout(() => {
+            reject(new Error('Content analysis timed out. Please try again with a shorter article.'));
+          }, 45000); // Timeout before Vercel's limit
+        })
+      ]);
 
-    // Get engagement predictions using the analysis results
-    const engagement = await Promise.race([
-      predictEngagementMetrics(
-        scrapedResult.content.mainContent || '',
-        analysis as Partial<AnalyticsResult>
-      ),
-      new Promise<EngagementMetrics>((_, reject) => {
-        setTimeout(() => {
-          reject(new Error('Engagement prediction timed out. Please try again.'));
-        }, 8000);
-      })
-    ]);
+      // Get engagement predictions using the analysis results
+      const engagement = await Promise.race([
+        predictEngagementMetrics(
+          scrapedResult.content.mainContent || '',
+          analysis as Partial<AnalyticsResult>
+        ),
+        new Promise<EngagementMetrics>((_, reject) => {
+          setTimeout(() => {
+            reject(new Error('Engagement prediction timed out. Please try again.'));
+          }, 8000);
+        })
+      ]);
 
-    // Combine all results
-    const result = {
-      data: {
-        currentArticle: {
-          ...(analysis as Partial<AnalyticsResult>),
-          engagement
-        },
-        stats: (analysis as Partial<AnalyticsResult>).stats || {
-          wordCountStats: {
-            count: 0,
-            min: 0,
-            max: 0,
-            avg: 0,
-            sum: 0
+      // Combine all results
+      const result = {
+        data: {
+          currentArticle: {
+            ...(analysis as Partial<AnalyticsResult>),
+            engagement
           },
-          articlesPerMonth: []
+          stats: (analysis as Partial<AnalyticsResult>).stats || {
+            wordCountStats: {
+              count: 0,
+              min: 0,
+              max: 0,
+              avg: 0,
+              sum: 0
+            },
+            articlesPerMonth: []
+          }
         }
-      }
-    };
+      };
 
-    clearTimeout(timeoutId);
-    return NextResponse.json(result);
+      clearTimeout(timeoutId);
+      return NextResponse.json(result);
+    } catch (analysisError) {
+      console.error('Error in content analysis:', analysisError);
+      return NextResponse.json(
+        { error: analysisError instanceof Error ? analysisError.message : 'Analysis failed' },
+        { status: 408 }
+      );
+    }
   } catch (error) {
     clearTimeout(timeoutId);
     console.error('Error in analyze-content route:', error);
