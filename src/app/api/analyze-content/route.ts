@@ -271,14 +271,11 @@ function getWordCountStats(content: string, existingStats?: WordCountStats): Wor
 }
 
 // Set timeout for the entire analysis process
-const ANALYSIS_TIMEOUT = 180000; // 180 seconds
-
-export const runtime = 'edge';
-export const maxDuration = 180;
+const ANALYSIS_TIMEOUT = 25000; // 25 seconds to stay under the 30s Edge limit
 
 export async function POST(req: Request) {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 175000); // Set to 175 seconds to ensure we stay under the 180s limit
+  const timeoutId = setTimeout(() => controller.abort(), 25000); // Set to 25 seconds to ensure we stay under the 30s limit
 
   try {
     const { url } = await req.json();
@@ -321,7 +318,7 @@ export async function POST(req: Request) {
     }
 
     try {
-      // Step 1: Initial content analysis with longer timeout
+      // Step 1: Initial content analysis with timeout
       const analysis = await Promise.race([
         analyzeContentWithAI({
           content: scrapedResult.content.mainContent || '',
@@ -335,7 +332,7 @@ export async function POST(req: Request) {
         new Promise((_, reject) => {
           setTimeout(() => {
             reject(new Error('Content analysis timed out. Please try again with a shorter article.'));
-          }, 120000); // Set to 120 seconds for the main analysis
+          }, 20000); // 20 seconds for main analysis
         })
       ]);
 
@@ -350,12 +347,11 @@ export async function POST(req: Request) {
           new Promise((_, reject) => {
             setTimeout(() => {
               reject(new Error('Engagement prediction timed out.'));
-            }, 30000); // Set to 30 seconds for engagement prediction
+            }, 5000); // 5 seconds for engagement prediction
           })
         ]);
       } catch (engagementError) {
         console.warn('Engagement prediction failed:', engagementError);
-        // Provide default engagement metrics if prediction fails
         engagement = {
           likes: 0,
           comments: 0,
@@ -412,12 +408,19 @@ export async function POST(req: Request) {
     if (error instanceof Error) {
       if (error.name === 'AbortError') {
         return Response.json({ 
-          error: 'The request took too long to process. Please try again with a shorter article.' 
+          error: 'The request took too long to process. Please try again with a shorter article.',
+          code: 'TIMEOUT'
         }, { status: 408 });
       }
-      return Response.json({ error: error.message }, { status: 500 });
+      return Response.json({ 
+        error: error.message,
+        code: 'ERROR'
+      }, { status: 500 });
     }
     
-    return Response.json({ error: 'An unexpected error occurred' }, { status: 500 });
+    return Response.json({ 
+      error: 'An unexpected error occurred',
+      code: 'UNKNOWN'
+    }, { status: 500 });
   }
 } 
