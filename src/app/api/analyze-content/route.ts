@@ -292,11 +292,60 @@ export async function POST(req: Request) {
       );
     }
 
+    // First check if we already have analysis for this URL
+    const existingUrl = await db.query.analyzedUrls.findFirst({
+      where: eq(analyzedUrls.url, url),
+      with: {
+        analytics: true
+      }
+    });
+
+    if (existingUrl?.analytics) {
+      console.log('Found existing analysis for URL');
+      clearTimeout(timeoutId);
+      return Response.json({
+        data: {
+          currentArticle: existingUrl.analytics
+        }
+      }, { status: 200 });
+    }
+
+    // Create or update the analyzed URL record
+    let analyzedUrlId: number;
+    if (!existingUrl) {
+      const [newUrl] = await db.insert(analyzedUrls).values({
+        url: url,
+        status: 'processing',
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }).returning();
+      if (!newUrl) {
+        throw new Error('Failed to create analyzed URL record');
+      }
+      analyzedUrlId = newUrl.id;
+    } else {
+      analyzedUrlId = existingUrl.id;
+      await db.update(analyzedUrls)
+        .set({ 
+          status: 'processing',
+          updatedAt: new Date()
+        })
+        .where(eq(analyzedUrls.id, analyzedUrlId));
+    }
+
     console.log('1. Scraping content...');
     const scrapedResult = await scrapePuppeteer(url);
 
     if (scrapedResult.error) {
       console.error('Scraping failed:', scrapedResult.error);
+      await db.update(analyzedUrls)
+        .set({ 
+          status: 'failed',
+          errorMessage: scrapedResult.error.message,
+          updatedAt: new Date()
+        })
+        .where(eq(analyzedUrls.id, analyzedUrlId));
+      
       clearTimeout(timeoutId);
       return Response.json(
         { error: scrapedResult.error.message },
@@ -306,6 +355,14 @@ export async function POST(req: Request) {
 
     if (!scrapedResult.content) {
       console.error('No content found in scraped result');
+      await db.update(analyzedUrls)
+        .set({ 
+          status: 'failed',
+          errorMessage: 'No content found in the scraped result',
+          updatedAt: new Date()
+        })
+        .where(eq(analyzedUrls.id, analyzedUrlId));
+      
       clearTimeout(timeoutId);
       return Response.json(
         { error: 'No content found in the scraped result' },
@@ -318,6 +375,14 @@ export async function POST(req: Request) {
     console.log('Word count:', wordCount);
     
     if (wordCount > 5000) {
+      await db.update(analyzedUrls)
+        .set({ 
+          status: 'failed',
+          errorMessage: 'Content is too long to analyze',
+          updatedAt: new Date()
+        })
+        .where(eq(analyzedUrls.id, analyzedUrlId));
+      
       clearTimeout(timeoutId);
       return Response.json(
         { error: 'Content is too long to analyze. Please try a shorter article (less than 5000 words).' },
@@ -361,8 +426,8 @@ export async function POST(req: Request) {
           readability: [],
           seo: []
         },
-        industry: '',
-        scope: '',
+        industry: 'General',
+        scope: 'General',
         topics: [],
         writingQuality: {
           grammar: 0,
@@ -371,9 +436,9 @@ export async function POST(req: Request) {
           vocabulary: 0,
           overall: 0
         },
-        audienceLevel: '',
-        contentType: '',
-        tone: '',
+        audienceLevel: 'General',
+        contentType: 'Article',
+        tone: 'Neutral',
         estimatedReadTime: calculateReadingTime(wordCount),
         keywords: [],
         keywordAnalysis: {
@@ -419,16 +484,66 @@ export async function POST(req: Request) {
       }
 
       console.log('6. Preparing final response...');
+      const finalAnalysis = {
+        ...baseAnalysis,
+        engagement,
+        stats: {
+          wordCountStats: getWordCountStats(scrapedResult.content.mainContent || ''),
+          articlesPerMonth: []
+        }
+      };
+
+      // Store the analysis in the database
+      console.log('Storing analysis in database...');
+      try {
+        const [analytics] = await db.insert(contentAnalytics).values({
+          analyzed_url_id: analyzedUrlId,
+          engagement_score: finalAnalysis.engagementScore,
+          content_quality_score: finalAnalysis.contentQualityScore,
+          readability_score: finalAnalysis.readabilityScore,
+          seo_score: finalAnalysis.seoScore,
+          industry: finalAnalysis.industry,
+          scope: finalAnalysis.scope,
+          topics: finalAnalysis.topics,
+          writing_quality: finalAnalysis.writingQuality,
+          audience_level: finalAnalysis.audienceLevel,
+          content_type: finalAnalysis.contentType,
+          tone: finalAnalysis.tone,
+          estimated_read_time: finalAnalysis.estimatedReadTime,
+          keywords: finalAnalysis.keywords,
+          keyword_analysis: finalAnalysis.keywordAnalysis,
+          insights: finalAnalysis.insights,
+          word_count_stats: finalAnalysis.stats.wordCountStats,
+          articles_per_month: finalAnalysis.stats.articlesPerMonth,
+          engagement: finalAnalysis.engagement,
+          created_at: new Date(),
+          updated_at: new Date()
+        }).returning();
+
+        // Update the analyzed URL status
+        await db.update(analyzedUrls)
+          .set({ 
+            status: 'completed',
+            completedAt: new Date(),
+            updatedAt: new Date()
+          })
+          .where(eq(analyzedUrls.id, analyzedUrlId));
+
+        console.log('Successfully stored analysis in database');
+      } catch (dbError) {
+        console.error('Failed to store analysis in database:', dbError);
+        await db.update(analyzedUrls)
+          .set({ 
+            status: 'failed',
+            errorMessage: 'Failed to store analysis in database',
+            updatedAt: new Date()
+          })
+          .where(eq(analyzedUrls.id, analyzedUrlId));
+      }
+
       const result = {
         data: {
-          currentArticle: {
-            ...baseAnalysis,
-            engagement,
-            stats: {
-              wordCountStats: getWordCountStats(scrapedResult.content.mainContent || ''),
-              articlesPerMonth: []
-            }
-          }
+          currentArticle: finalAnalysis
         }
       };
 
@@ -438,6 +553,14 @@ export async function POST(req: Request) {
 
     } catch (analysisError) {
       console.error('Analysis error:', analysisError);
+      await db.update(analyzedUrls)
+        .set({ 
+          status: 'failed',
+          errorMessage: analysisError instanceof Error ? analysisError.message : 'Analysis failed',
+          updatedAt: new Date()
+        })
+        .where(eq(analyzedUrls.id, analyzedUrlId));
+      
       clearTimeout(timeoutId);
       return Response.json({ 
         error: analysisError instanceof Error ? analysisError.message : 'Analysis failed',
