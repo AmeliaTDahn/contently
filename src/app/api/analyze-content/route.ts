@@ -271,11 +271,14 @@ function getWordCountStats(content: string, existingStats?: WordCountStats): Wor
 }
 
 // Set timeout for the entire analysis process
-const ANALYSIS_TIMEOUT = 25000; // 25 seconds to stay under the 30s Edge limit
+const ANALYSIS_TIMEOUT = 55000; // 55 seconds to stay under the 60s serverless limit
+
+export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 export async function POST(req: Request) {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 25000); // Set to 25 seconds to ensure we stay under the 30s limit
+  const timeoutId = setTimeout(() => controller.abort(), 55000); // Set to 55 seconds to stay under the 60s limit
 
   try {
     const { url } = await req.json();
@@ -331,8 +334,8 @@ export async function POST(req: Request) {
         }),
         new Promise((_, reject) => {
           setTimeout(() => {
-            reject(new Error('Content analysis timed out. Please try again with a shorter article.'));
-          }, 20000); // 20 seconds for main analysis
+            reject(new Error('Content analysis timed out after 45 seconds. The article may be too complex to analyze.'));
+          }, 45000); // 45 seconds for main analysis
         })
       ]);
 
@@ -347,7 +350,7 @@ export async function POST(req: Request) {
           new Promise((_, reject) => {
             setTimeout(() => {
               reject(new Error('Engagement prediction timed out.'));
-            }, 5000); // 5 seconds for engagement prediction
+            }, 8000); // 8 seconds for engagement prediction
           })
         ]);
       } catch (engagementError) {
