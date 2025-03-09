@@ -271,14 +271,14 @@ function getWordCountStats(content: string, existingStats?: WordCountStats): Wor
 }
 
 // Set timeout for the entire analysis process
-const ANALYSIS_TIMEOUT = 120000; // 120 seconds
+const ANALYSIS_TIMEOUT = 180000; // 180 seconds
 
 export const runtime = 'edge';
-export const maxDuration = 60;
+export const maxDuration = 180;
 
 export async function POST(req: Request) {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 55000);
+  const timeoutId = setTimeout(() => controller.abort(), 175000); // Set to 175 seconds to ensure we stay under the 180s limit
 
   try {
     const { url } = await req.json();
@@ -321,7 +321,7 @@ export async function POST(req: Request) {
     }
 
     try {
-      // Step 1: Initial content analysis with shorter timeout
+      // Step 1: Initial content analysis with longer timeout
       const analysis = await Promise.race([
         analyzeContentWithAI({
           content: scrapedResult.content.mainContent || '',
@@ -335,7 +335,7 @@ export async function POST(req: Request) {
         new Promise((_, reject) => {
           setTimeout(() => {
             reject(new Error('Content analysis timed out. Please try again with a shorter article.'));
-          }, 30000);
+          }, 120000); // Set to 120 seconds for the main analysis
         })
       ]);
 
@@ -350,7 +350,7 @@ export async function POST(req: Request) {
           new Promise((_, reject) => {
             setTimeout(() => {
               reject(new Error('Engagement prediction timed out.'));
-            }, 5000);
+            }, 30000); // Set to 30 seconds for engagement prediction
           })
         ]);
       } catch (engagementError) {
