@@ -2,7 +2,7 @@
   "functions": {
     "app/api/analyze-content/route.ts": {
       "memory": 3008,
-      "maxDuration": 300
+      "maxDuration": 60
     }
   },
   "regions": ["iad1"]

@@ -274,11 +274,11 @@ function getWordCountStats(content: string, existingStats?: WordCountStats): Wor
 const ANALYSIS_TIMEOUT = 120000; // 120 seconds
 
 export const runtime = 'edge';
-export const maxDuration = 300;
+export const maxDuration = 60;
 
 export async function POST(req: Request) {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 290000); // Abort just before Vercel's timeout
+  const timeoutId = setTimeout(() => controller.abort(), 55000); // Abort just before Vercel's timeout
 
   try {
     const { url } = await req.json();
@@ -308,6 +308,15 @@ export async function POST(req: Request) {
       );
     }
 
+    // Check content length and return early if it's too long
+    const wordCount = (scrapedResult.content.mainContent || '').split(/\s+/).length;
+    if (wordCount > 5000) {
+      return NextResponse.json(
+        { error: 'Content is too long to analyze. Please try a shorter article (less than 5000 words).' },
+        { status: 400 }
+      );
+    }
+
     // Analyze the content using OpenAI with timeout
     const analysis = await Promise.race([
       analyzeContentWithAI({
@@ -322,7 +331,7 @@ export async function POST(req: Request) {
       new Promise<Partial<AnalyticsResult>>((_, reject) => {
         setTimeout(() => {
           reject(new Error('Content analysis timed out. Please try again with a shorter article.'));
-        }, 280000); // Timeout before Vercel's limit
+        }, 45000); // Timeout before Vercel's limit
       })
     ]);
 
@@ -335,7 +344,7 @@ export async function POST(req: Request) {
       new Promise<EngagementMetrics>((_, reject) => {
         setTimeout(() => {
           reject(new Error('Engagement prediction timed out. Please try again.'));
-        }, 30000);
+        }, 8000);
       })
     ]);
 
