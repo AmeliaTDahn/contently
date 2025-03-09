@@ -219,13 +219,29 @@ export const ContentAnalytics: React.FC = () => {
         body: JSON.stringify({ url }),
       });
 
+      // First try to get the response text
+      const textResponse = await response.text();
+      
+      // Try to parse as JSON, but prepare for failure
       let data;
       try {
-        const textResponse = await response.text();
         data = JSON.parse(textResponse);
       } catch (parseError) {
         console.error('Error parsing response:', parseError);
-        throw new Error('Failed to parse server response. Please try again.');
+        console.error('Raw response:', textResponse);
+        
+        // If we got a 504, it's a gateway timeout
+        if (response.status === 504) {
+          throw new Error('The server took too long to respond. Please try again with a shorter article.');
+        }
+        
+        // If we got a 408, it's a timeout
+        if (response.status === 408) {
+          throw new Error('The analysis took too long. Please try a shorter article or try again later.');
+        }
+        
+        // For any other parsing error
+        throw new Error('Failed to process server response. Please try again.');
       }
       
       // If the response was very fast (less than 1 second), it likely came from cache
@@ -233,15 +249,12 @@ export const ContentAnalytics: React.FC = () => {
       setLoadedFromCache(responseTime < 1000);
 
       if (!response.ok) {
-        let errorMessage = data?.error || 'Failed to analyze content';
-        if (response.status === 408) {
-          errorMessage = 'The analysis took too long. Please try a shorter article or try again later.';
-        }
+        const errorMessage = data?.error || 'Failed to analyze content';
         throw new Error(errorMessage);
       }
 
       if (!data?.data) {
-        throw new Error('No analysis data received from the server');
+        throw new Error('No analysis data received');
       }
 
       // Store result for this URL

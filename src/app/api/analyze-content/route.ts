@@ -284,9 +284,10 @@ export async function POST(req: Request) {
     const { url } = await req.json();
 
     if (!url) {
-      return new Response(
-        JSON.stringify({ error: 'URL is required' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
+      clearTimeout(timeoutId);
+      return Response.json(
+        { error: 'URL is required' },
+        { status: 400 }
       );
     }
 
@@ -294,26 +295,28 @@ export async function POST(req: Request) {
     const scrapedResult = await scrapePuppeteer(url);
 
     if (scrapedResult.error) {
-      console.error('Error scraping URL:', scrapedResult.error);
-      return new Response(
-        JSON.stringify({ error: scrapedResult.error.message }),
-        { status: 500, headers: { 'Content-Type': 'application/json' } }
+      clearTimeout(timeoutId);
+      return Response.json(
+        { error: scrapedResult.error.message },
+        { status: 500 }
       );
     }
 
     if (!scrapedResult.content) {
-      return new Response(
-        JSON.stringify({ error: 'No content found in the scraped result' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
+      clearTimeout(timeoutId);
+      return Response.json(
+        { error: 'No content found in the scraped result' },
+        { status: 400 }
       );
     }
 
     // Check content length and return early if it's too long
     const wordCount = (scrapedResult.content.mainContent || '').split(/\s+/).length;
     if (wordCount > 5000) {
-      return new Response(
-        JSON.stringify({ error: 'Content is too long to analyze. Please try a shorter article (less than 5000 words).' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
+      clearTimeout(timeoutId);
+      return Response.json(
+        { error: 'Content is too long to analyze. Please try a shorter article (less than 5000 words).' },
+        { status: 400 }
       );
     }
 
@@ -331,7 +334,7 @@ export async function POST(req: Request) {
         }),
         new Promise((_, reject) => {
           setTimeout(() => {
-            reject(new Error('Initial analysis timed out. Please try again with a shorter article.'));
+            reject(new Error('Content analysis timed out. Please try again with a shorter article.'));
           }, 30000);
         })
       ]);
@@ -384,7 +387,7 @@ export async function POST(req: Request) {
               min: 0,
               max: 0,
               avg: 0,
-              sum: wordCount // Use actual word count
+              sum: wordCount
             },
             articlesPerMonth: []
           }
@@ -392,19 +395,15 @@ export async function POST(req: Request) {
       };
 
       clearTimeout(timeoutId);
-      return new Response(
-        JSON.stringify(result),
-        { status: 200, headers: { 'Content-Type': 'application/json' } }
-      );
+      return Response.json(result, { status: 200 });
+
     } catch (analysisError) {
+      clearTimeout(timeoutId);
       console.error('Error in content analysis:', analysisError);
-      return new Response(
-        JSON.stringify({ 
-          error: analysisError instanceof Error ? analysisError.message : 'Analysis failed',
-          details: analysisError instanceof Error ? analysisError.stack : undefined
-        }),
-        { status: 408, headers: { 'Content-Type': 'application/json' } }
-      );
+      return Response.json({ 
+        error: analysisError instanceof Error ? analysisError.message : 'Analysis failed',
+        details: analysisError instanceof Error ? analysisError.stack : undefined
+      }, { status: 408 });
     }
   } catch (error) {
     clearTimeout(timeoutId);
@@ -412,20 +411,13 @@ export async function POST(req: Request) {
     
     if (error instanceof Error) {
       if (error.name === 'AbortError') {
-        return new Response(
-          JSON.stringify({ error: 'The request took too long to process. Please try again with a shorter article.' }),
-          { status: 408, headers: { 'Content-Type': 'application/json' } }
-        );
+        return Response.json({ 
+          error: 'The request took too long to process. Please try again with a shorter article.' 
+        }, { status: 408 });
       }
-      return new Response(
-        JSON.stringify({ error: error.message }),
-        { status: 500, headers: { 'Content-Type': 'application/json' } }
-      );
+      return Response.json({ error: error.message }, { status: 500 });
     }
     
-    return new Response(
-      JSON.stringify({ error: 'An unexpected error occurred' }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
+    return Response.json({ error: 'An unexpected error occurred' }, { status: 500 });
   }
 } 
