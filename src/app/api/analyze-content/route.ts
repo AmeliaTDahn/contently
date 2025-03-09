@@ -274,9 +274,12 @@ function getWordCountStats(content: string, existingStats?: WordCountStats): Wor
 const ANALYSIS_TIMEOUT = 120000; // 120 seconds
 
 export const runtime = 'edge';
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function POST(req: Request) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 290000); // Abort just before Vercel's timeout
+
   try {
     const { url } = await req.json();
 
@@ -305,31 +308,45 @@ export async function POST(req: Request) {
       );
     }
 
-    // Analyze the content using OpenAI
-    const analysis = await analyzeContentWithAI({
-      content: scrapedResult.content.mainContent || '',
-      title: scrapedResult.content.metadata.title || '',
-      metadata: {
-        description: scrapedResult.content.metadata.description || '',
-        keywords: scrapedResult.content.metadata.keywords || [],
-        author: scrapedResult.content.metadata.author || ''
-      }
-    });
+    // Analyze the content using OpenAI with timeout
+    const analysis = await Promise.race([
+      analyzeContentWithAI({
+        content: scrapedResult.content.mainContent || '',
+        title: scrapedResult.content.metadata.title || '',
+        metadata: {
+          description: scrapedResult.content.metadata.description || '',
+          keywords: scrapedResult.content.metadata.keywords || [],
+          author: scrapedResult.content.metadata.author || ''
+        }
+      }),
+      new Promise<Partial<AnalyticsResult>>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error('Content analysis timed out. Please try again with a shorter article.'));
+        }, 280000); // Timeout before Vercel's limit
+      })
+    ]);
 
     // Get engagement predictions using the analysis results
-    const engagement = await predictEngagementMetrics(
-      scrapedResult.content.mainContent || '',
-      analysis
-    );
+    const engagement = await Promise.race([
+      predictEngagementMetrics(
+        scrapedResult.content.mainContent || '',
+        analysis as Partial<AnalyticsResult>
+      ),
+      new Promise<EngagementMetrics>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error('Engagement prediction timed out. Please try again.'));
+        }, 30000);
+      })
+    ]);
 
     // Combine all results
     const result = {
       data: {
         currentArticle: {
-          ...analysis,
+          ...(analysis as Partial<AnalyticsResult>),
           engagement
         },
-        stats: analysis.stats || {
+        stats: (analysis as Partial<AnalyticsResult>).stats || {
           wordCountStats: {
             count: 0,
             min: 0,
@@ -342,11 +359,28 @@ export async function POST(req: Request) {
       }
     };
 
+    clearTimeout(timeoutId);
     return NextResponse.json(result);
   } catch (error) {
+    clearTimeout(timeoutId);
     console.error('Error in analyze-content route:', error);
+    
+    // Handle different types of errors
+    if (error instanceof Error) {
+      if (error.name === 'AbortError') {
+        return NextResponse.json(
+          { error: 'The request took too long to process. Please try again with a shorter article.' },
+          { status: 408 }
+        );
+      }
+      return NextResponse.json(
+        { error: error.message },
+        { status: 500 }
+      );
+    }
+    
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'An unknown error occurred' },
+      { error: 'An unexpected error occurred' },
       { status: 500 }
     );
   }
