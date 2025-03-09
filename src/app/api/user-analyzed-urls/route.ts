@@ -7,18 +7,27 @@ export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const userId = searchParams.get('userId');
+    const url = searchParams.get('url');
     
-    // If no userId is provided, return an empty array
-    if (!userId) {
+    // If neither userId nor url is provided, return an empty array
+    if (!userId && !url) {
       return new Response(JSON.stringify({ urls: [] }));
     }
 
-    // Query the database for the user's analyzed URLs
+    // Build the where clause based on provided parameters
+    let whereClause;
+    if (url) {
+      whereClause = eq(analyzedUrls.url, url);
+    } else if (userId) {
+      whereClause = eq(analyzedUrls.userId, userId);
+    }
+
+    // Query the database for the URLs with their analytics
     const userUrls = await db.query.analyzedUrls.findMany({
-      where: eq(analyzedUrls.userId, userId),
+      where: whereClause,
       orderBy: [desc(analyzedUrls.createdAt)],
       with: {
-        // You can add relations here if needed in the future
+        analytics: true
       },
     });
 

@@ -16,6 +16,7 @@ interface DbUrlRecord {
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
+  analytics?: ExtendedAnalytics;
 }
 
 interface ApiResponse {
@@ -213,6 +214,37 @@ export const ContentAnalytics: React.FC = () => {
       // Record the start time to detect if results came from cache
       const startTime = Date.now();
       
+      // First try to get existing analytics from the database
+      const existingResponse = await fetch(`/api/user-analyzed-urls?url=${encodeURIComponent(url)}`);
+      const existingData = await existingResponse.json();
+      
+      if (existingResponse.ok && existingData.urls?.[0]?.analytics) {
+        // If we have existing analytics, use that
+        const analytics = existingData.urls[0].analytics as ExtendedAnalytics;
+        
+        // Store result for this URL
+        setAnalysisResults(prev => ({
+          ...prev,
+          [url]: analytics
+        }));
+        
+        // Set the current result
+        setResult(analytics);
+        setError(null);
+        setLoadedFromCache(true);
+        
+        // If we're analyzing multiple URLs, move to the next one
+        if (selectedUrls.length > 0 && currentUrlIndex < selectedUrls.length - 1) {
+          setTimeout(() => {
+            setCurrentUrlIndex(prev => prev + 1);
+          }, 500); // Small delay between analyses
+        }
+        
+        setIsAnalyzing(false);
+        return;
+      }
+      
+      // If no existing analytics, proceed with new analysis
       const response = await fetch('/api/analyze-content', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
