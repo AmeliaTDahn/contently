@@ -7,6 +7,7 @@ import { db } from '@/server/db';
 import { analyzedUrls, contentAnalytics } from '@/server/db/schema';
 import { eq } from 'drizzle-orm';
 import { analyzeContentWithAI, predictEngagementMetrics } from '@/utils/openai';
+import { type ContentAnalytics } from '@/types/analytics';
 
 interface RequestBody {
   url: string;
@@ -104,14 +105,32 @@ export interface AnalyticsResult {
   readabilityExplanation?: string;
   seoScore: number;
   seoExplanation?: string;
-  insights: Insights;
+  insights: {
+    engagement: string[];
+    content: string[];
+    readability: string[];
+    seo: string[];
+  };
   industry: string;
   industryExplanation?: string;
   scope: string;
   scopeExplanation?: string;
   topics: string[];
   topicsExplanation?: string;
-  writingQuality: WritingQuality;
+  writingQuality: {
+    grammar: number;
+    clarity: number;
+    structure: number;
+    vocabulary: number;
+    overall: number;
+    explanations?: {
+      grammar: string;
+      clarity: string;
+      structure: string;
+      vocabulary: string;
+      overall: string;
+    };
+  };
   audienceLevel: string;
   audienceLevelExplanation?: string;
   contentType: string;
@@ -119,12 +138,63 @@ export interface AnalyticsResult {
   tone: string;
   toneExplanation?: string;
   estimatedReadTime: number;
-  keywords: Keyword[];
-  keywordAnalysis: KeywordAnalysis;
-  engagement: EngagementMetrics;
+  keywords: Array<{
+    text: string;
+    count: number;
+  }>;
+  keywordAnalysis: {
+    distribution: string;
+    overused: string[];
+    underused: string[];
+    explanation?: string;
+  };
+  engagement: {
+    likes: number;
+    comments: number;
+    shares: number;
+    bookmarks: number;
+    totalViews: number;
+    uniqueViews: number;
+    avgTimeOnPage: number;
+    bounceRate: number;
+    socialShares: {
+      facebook: number;
+      twitter: number;
+      linkedin: number;
+      pinterest: number;
+    };
+    explanations?: {
+      likes: string;
+      comments: string;
+      shares: string;
+      bookmarks: string;
+      totalViews: string;
+      uniqueViews: string;
+      avgTimeOnPage: string;
+      bounceRate: string;
+      socialShares: string;
+    };
+  };
   stats: {
-    wordCountStats: WordCountStats;
-    articlesPerMonth: ArticleByMonth[];
+    wordCountStats: {
+      count: number;
+      min: number;
+      max: number;
+      avg: number;
+      sum: number;
+      explanations?: {
+        count: string;
+        min: string;
+        max: string;
+        avg: string;
+        sum: string;
+      };
+    };
+    articlesPerMonth: Array<{
+      date: string;
+      count: number;
+      explanation?: string;
+    }>;
   };
 }
 
@@ -415,11 +485,15 @@ export async function POST(req: Request) {
       }
 
       // Ensure all required fields are present with default values if needed
-      const baseAnalysis = {
+      const baseAnalysis: AnalyticsResult = {
         engagementScore: 0,
+        engagementExplanation: '',
         contentQualityScore: 0,
+        contentQualityExplanation: '',
         readabilityScore: 0,
+        readabilityExplanation: '',
         seoScore: 0,
+        seoExplanation: '',
         insights: {
           engagement: [],
           content: [],
@@ -427,45 +501,40 @@ export async function POST(req: Request) {
           seo: []
         },
         industry: 'General',
+        industryExplanation: '',
         scope: 'General',
+        scopeExplanation: '',
         topics: [],
+        topicsExplanation: '',
         writingQuality: {
           grammar: 0,
           clarity: 0,
           structure: 0,
           vocabulary: 0,
-          overall: 0
+          overall: 0,
+          explanations: {
+            grammar: '',
+            clarity: '',
+            structure: '',
+            vocabulary: '',
+            overall: ''
+          }
         },
         audienceLevel: 'General',
+        audienceLevelExplanation: '',
         contentType: 'Article',
+        contentTypeExplanation: '',
         tone: 'Neutral',
+        toneExplanation: '',
         estimatedReadTime: calculateReadingTime(wordCount),
         keywords: [],
         keywordAnalysis: {
           distribution: '',
           overused: [],
-          underused: []
+          underused: [],
+          explanation: ''
         },
-        ...analysis
-      };
-
-      console.log('5. Starting engagement prediction...');
-      let engagement;
-      try {
-        engagement = await Promise.race([
-          predictEngagementMetrics(
-            scrapedResult.content.mainContent || '',
-            baseAnalysis
-          ),
-          new Promise((_, reject) => {
-            setTimeout(() => {
-              reject(new Error('Engagement prediction timed out.'));
-            }, 8000);
-          })
-        ]);
-      } catch (engagementError) {
-        console.warn('Engagement prediction failed:', engagementError);
-        engagement = {
+        engagement: {
           likes: 0,
           comments: 0,
           shares: 0,
@@ -479,13 +548,166 @@ export async function POST(req: Request) {
             twitter: 0,
             linkedin: 0,
             pinterest: 0
+          },
+          explanations: {
+            likes: '',
+            comments: '',
+            shares: '',
+            bookmarks: '',
+            totalViews: '',
+            uniqueViews: '',
+            avgTimeOnPage: '',
+            bounceRate: '',
+            socialShares: ''
+          }
+        },
+        stats: {
+          wordCountStats: {
+            count: 0,
+            min: 0,
+            max: 0,
+            avg: 0,
+            sum: 0,
+            explanations: {
+              count: '',
+              min: '',
+              max: '',
+              avg: '',
+              sum: ''
+            }
+          },
+          articlesPerMonth: []
+        }
+      };
+
+      // Merge the AI analysis with the base analysis
+      const analysisResult = analysis as Partial<AnalyticsResult>;
+      const mergedAnalysis: AnalyticsResult = {
+        ...baseAnalysis,
+        ...analysisResult,
+        // Ensure nested objects are properly merged
+        insights: {
+          engagement: [...(analysisResult?.insights?.engagement || [])],
+          content: [...(analysisResult?.insights?.content || [])],
+          readability: [...(analysisResult?.insights?.readability || [])],
+          seo: [...(analysisResult?.insights?.seo || [])]
+        },
+        writingQuality: {
+          grammar: analysisResult?.writingQuality?.grammar ?? 0,
+          clarity: analysisResult?.writingQuality?.clarity ?? 0,
+          structure: analysisResult?.writingQuality?.structure ?? 0,
+          vocabulary: analysisResult?.writingQuality?.vocabulary ?? 0,
+          overall: analysisResult?.writingQuality?.overall ?? 0,
+          explanations: {
+            grammar: analysisResult?.writingQuality?.explanations?.grammar ?? '',
+            clarity: analysisResult?.writingQuality?.explanations?.clarity ?? '',
+            structure: analysisResult?.writingQuality?.explanations?.structure ?? '',
+            vocabulary: analysisResult?.writingQuality?.explanations?.vocabulary ?? '',
+            overall: analysisResult?.writingQuality?.explanations?.overall ?? ''
+          }
+        },
+        keywordAnalysis: {
+          distribution: analysisResult?.keywordAnalysis?.distribution ?? '',
+          overused: [...(analysisResult?.keywordAnalysis?.overused || [])],
+          underused: [...(analysisResult?.keywordAnalysis?.underused || [])],
+          explanation: analysisResult?.keywordAnalysis?.explanation ?? ''
+        },
+        engagement: {
+          likes: analysisResult?.engagement?.likes ?? 0,
+          comments: analysisResult?.engagement?.comments ?? 0,
+          shares: analysisResult?.engagement?.shares ?? 0,
+          bookmarks: analysisResult?.engagement?.bookmarks ?? 0,
+          totalViews: analysisResult?.engagement?.totalViews ?? 0,
+          uniqueViews: analysisResult?.engagement?.uniqueViews ?? 0,
+          avgTimeOnPage: analysisResult?.engagement?.avgTimeOnPage ?? 0,
+          bounceRate: analysisResult?.engagement?.bounceRate ?? 0,
+          socialShares: {
+            facebook: analysisResult?.engagement?.socialShares?.facebook ?? 0,
+            twitter: analysisResult?.engagement?.socialShares?.twitter ?? 0,
+            linkedin: analysisResult?.engagement?.socialShares?.linkedin ?? 0,
+            pinterest: analysisResult?.engagement?.socialShares?.pinterest ?? 0
+          },
+          explanations: {
+            likes: analysisResult?.engagement?.explanations?.likes ?? '',
+            comments: analysisResult?.engagement?.explanations?.comments ?? '',
+            shares: analysisResult?.engagement?.explanations?.shares ?? '',
+            bookmarks: analysisResult?.engagement?.explanations?.bookmarks ?? '',
+            totalViews: analysisResult?.engagement?.explanations?.totalViews ?? '',
+            uniqueViews: analysisResult?.engagement?.explanations?.uniqueViews ?? '',
+            avgTimeOnPage: analysisResult?.engagement?.explanations?.avgTimeOnPage ?? '',
+            bounceRate: analysisResult?.engagement?.explanations?.bounceRate ?? '',
+            socialShares: analysisResult?.engagement?.explanations?.socialShares ?? ''
+          }
+        },
+        stats: {
+          wordCountStats: {
+            count: analysisResult?.stats?.wordCountStats?.count ?? 0,
+            min: analysisResult?.stats?.wordCountStats?.min ?? 0,
+            max: analysisResult?.stats?.wordCountStats?.max ?? 0,
+            avg: analysisResult?.stats?.wordCountStats?.avg ?? 0,
+            sum: analysisResult?.stats?.wordCountStats?.sum ?? 0,
+            explanations: {
+              count: analysisResult?.stats?.wordCountStats?.explanations?.count ?? '',
+              min: analysisResult?.stats?.wordCountStats?.explanations?.min ?? '',
+              max: analysisResult?.stats?.wordCountStats?.explanations?.max ?? '',
+              avg: analysisResult?.stats?.wordCountStats?.explanations?.avg ?? '',
+              sum: analysisResult?.stats?.wordCountStats?.explanations?.sum ?? ''
+            }
+          },
+          articlesPerMonth: [...(analysisResult?.stats?.articlesPerMonth || [])]
+        }
+      };
+
+      console.log('5. Starting engagement prediction...');
+      let engagement: AnalyticsResult['engagement'];
+      try {
+        const predictedEngagement = await Promise.race([
+          predictEngagementMetrics(
+            scrapedResult.content.mainContent || '',
+            mergedAnalysis
+          ),
+          new Promise((_, reject) => {
+            setTimeout(() => {
+              reject(new Error('Engagement prediction timed out.'));
+            }, 8000);
+          })
+        ]) as AnalyticsResult['engagement'];
+
+        engagement = {
+          likes: predictedEngagement?.likes ?? 0,
+          comments: predictedEngagement?.comments ?? 0,
+          shares: predictedEngagement?.shares ?? 0,
+          bookmarks: predictedEngagement?.bookmarks ?? 0,
+          totalViews: predictedEngagement?.totalViews ?? 0,
+          uniqueViews: predictedEngagement?.uniqueViews ?? 0,
+          avgTimeOnPage: predictedEngagement?.avgTimeOnPage ?? 0,
+          bounceRate: predictedEngagement?.bounceRate ?? 0,
+          socialShares: {
+            facebook: predictedEngagement?.socialShares?.facebook ?? 0,
+            twitter: predictedEngagement?.socialShares?.twitter ?? 0,
+            linkedin: predictedEngagement?.socialShares?.linkedin ?? 0,
+            pinterest: predictedEngagement?.socialShares?.pinterest ?? 0
+          },
+          explanations: {
+            likes: predictedEngagement?.explanations?.likes ?? '',
+            comments: predictedEngagement?.explanations?.comments ?? '',
+            shares: predictedEngagement?.explanations?.shares ?? '',
+            bookmarks: predictedEngagement?.explanations?.bookmarks ?? '',
+            totalViews: predictedEngagement?.explanations?.totalViews ?? '',
+            uniqueViews: predictedEngagement?.explanations?.uniqueViews ?? '',
+            avgTimeOnPage: predictedEngagement?.explanations?.avgTimeOnPage ?? '',
+            bounceRate: predictedEngagement?.explanations?.bounceRate ?? '',
+            socialShares: predictedEngagement?.explanations?.socialShares ?? ''
           }
         };
+      } catch (engagementError) {
+        console.warn('Engagement prediction failed:', engagementError);
+        engagement = baseAnalysis.engagement;
       }
 
       console.log('6. Preparing final response...');
       const finalAnalysis = {
-        ...baseAnalysis,
+        ...mergedAnalysis,
         engagement,
         stats: {
           wordCountStats: getWordCountStats(scrapedResult.content.mainContent || ''),
@@ -496,29 +718,39 @@ export async function POST(req: Request) {
       // Store the analysis in the database
       console.log('Storing analysis in database...');
       try {
-        const [analytics] = await db.insert(contentAnalytics).values({
-          analyzed_url_id: analyzedUrlId,
-          engagement_score: finalAnalysis.engagementScore,
-          content_quality_score: finalAnalysis.contentQualityScore,
-          readability_score: finalAnalysis.readabilityScore,
-          seo_score: finalAnalysis.seoScore,
+        const contentAnalyticsData: Omit<ContentAnalytics, 'id'> = {
+          analyzedUrlId,
+          engagementScore: Math.round(finalAnalysis.engagementScore),
+          engagementExplanation: finalAnalysis.engagementExplanation,
+          contentQualityScore: Math.round(finalAnalysis.contentQualityScore),
+          contentQualityExplanation: finalAnalysis.contentQualityExplanation,
+          readabilityScore: Math.round(finalAnalysis.readabilityScore),
+          readabilityExplanation: finalAnalysis.readabilityExplanation,
+          seoScore: Math.round(finalAnalysis.seoScore),
+          seoExplanation: finalAnalysis.seoExplanation,
           industry: finalAnalysis.industry,
+          industryExplanation: finalAnalysis.industryExplanation,
           scope: finalAnalysis.scope,
+          scopeExplanation: finalAnalysis.scopeExplanation,
           topics: finalAnalysis.topics,
-          writing_quality: finalAnalysis.writingQuality,
-          audience_level: finalAnalysis.audienceLevel,
-          content_type: finalAnalysis.contentType,
+          topicsExplanation: finalAnalysis.topicsExplanation,
+          writingQuality: finalAnalysis.writingQuality,
+          audienceLevel: finalAnalysis.audienceLevel,
+          audienceLevelExplanation: finalAnalysis.audienceLevelExplanation,
+          contentType: finalAnalysis.contentType,
+          contentTypeExplanation: finalAnalysis.contentTypeExplanation,
           tone: finalAnalysis.tone,
-          estimated_read_time: finalAnalysis.estimatedReadTime,
+          toneExplanation: finalAnalysis.toneExplanation,
+          estimatedReadTime: finalAnalysis.estimatedReadTime,
           keywords: finalAnalysis.keywords,
-          keyword_analysis: finalAnalysis.keywordAnalysis,
+          keywordAnalysis: finalAnalysis.keywordAnalysis,
           insights: finalAnalysis.insights,
-          word_count_stats: finalAnalysis.stats.wordCountStats,
-          articles_per_month: finalAnalysis.stats.articlesPerMonth,
-          engagement: finalAnalysis.engagement,
-          created_at: new Date(),
-          updated_at: new Date()
-        }).returning();
+          wordCountStats: finalAnalysis.stats.wordCountStats,
+          articlesPerMonth: finalAnalysis.stats.articlesPerMonth,
+          engagement: finalAnalysis.engagement
+        };
+
+        const [analytics] = await db.insert(contentAnalytics).values(contentAnalyticsData).returning();
 
         // Update the analyzed URL status
         await db.update(analyzedUrls)
